@@ -73,6 +73,12 @@ jobs:
           git -C source apply "$vcpkgFix"
           if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg fix application failed.' }
 
+          $baselineFix = Join-Path $env:GITHUB_WORKSPACE 'patches\rc6-vcpkg-baseline-fix.patch'
+          git -C source apply --check "$baselineFix"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg baseline fix preflight failed.' }
+          git -C source apply "$baselineFix"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg baseline fix application failed.' }
+
           # Windows PowerShell 5.1 reads UTF-8 without BOM as the legacy ANSI code page.
           # RC6 scripts contain Russian diagnostic text, so normalize them explicitly.
           $utf8Bom = [Text.UTF8Encoding]::new($true)
