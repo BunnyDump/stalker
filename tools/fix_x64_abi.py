@@ -14,8 +14,8 @@ RAISE_OLD = b"RaiseException(0x406D1388, 0, sizeof(tn) / sizeof(DWORD), (DWORD*)
 RAISE_NEW = b"RaiseException(0x406D1388, 0, sizeof(tn) / sizeof(ULONG_PTR), reinterpret_cast<const ULONG_PTR*>(&tn));"
 APP_PATH_OLD = b"extern char g_application_path[256];"
 APP_PATH_NEW = b"#ifdef _WIN64\nchar g_application_path[256] = {};\n#else\nextern char g_application_path[256];\n#endif"
-LUA_STUB_OLD = b'#include "lua.h"\n#include "luajit.h"'
-LUA_STUB_NEW = b'#define LUA_CORE\n#include "lua.h"\n#include "luajit.h"'
+LUA_STUB_OLD = b'#include "lua.h"'
+LUA_STUB_NEW = b'#define LUA_CORE\n#include "lua.h"'
 CAST_INT_OLD = b"cast_int(pc - p->code)"
 CAST_INT_NEW = b"cast(int, pc - p->code)"
 
@@ -168,7 +168,8 @@ def main() -> int:
 
     # The x64 interpreter stub is part of xrLua itself. LUA_BUILD_AS_DLL makes
     # LUA_API dllimport unless LUA_CORE is defined before lua.h, which makes
-    # MSVC reject these definitions with C2491. Mark the stub as Lua core code.
+    # MSVC reject these definitions with C2491. Match only the include line so
+    # the migration is independent of CRLF/LF source line endings.
     replace_exact(lua_stub, LUA_STUB_OLD, LUA_STUB_NEW, "xrLua/ljit_x64_stub.c LUA_CORE", require_old_absent=False)
     if lua_stub.read_bytes().count(b"#define LUA_CORE") != 1:
         raise RuntimeError("xrLua/ljit_x64_stub.c: LUA_CORE was not installed exactly once")
