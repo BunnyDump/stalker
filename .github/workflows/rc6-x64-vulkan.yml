@@ -142,7 +142,7 @@ jobs:
         run: BUILD_RC6_X64_VULKAN_RELEASE.bat
 
       - name: Save vcpkg binary archives
-        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        if: always() && steps.vcpkg-cache.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
