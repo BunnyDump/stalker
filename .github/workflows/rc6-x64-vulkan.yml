@@ -87,6 +87,9 @@ jobs:
           python "$env:GITHUB_WORKSPACE\tools\fix_legacy_stl.py" "$env:GITHUB_WORKSPACE\source"
           if ($LASTEXITCODE -ne 0) { throw 'RC6 legacy STL modernization failed.' }
 
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_abi.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 Win64 ABI migration failed.' }
+
           # Windows PowerShell 5.1 reads UTF-8 without BOM as the legacy ANSI code page.
           # RC6 scripts contain Russian diagnostic text, so normalize them explicitly.
           $utf8Bom = [Text.UTF8Encoding]::new($true)
