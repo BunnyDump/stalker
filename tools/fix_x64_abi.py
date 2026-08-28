@@ -9,7 +9,7 @@ APP_PATH_OLD = b"extern char g_application_path[256];"
 APP_PATH_NEW = b"#ifdef _WIN64\nchar g_application_path[256] = {};\n#else\nextern char g_application_path[256];\n#endif"
 
 
-def replace_exact(path: Path, old: bytes, new: bytes, label: str) -> None:
+def replace_exact(path: Path, old: bytes, new: bytes, label: str, require_old_absent: bool = True) -> None:
     data = path.read_bytes()
     count = data.count(old)
     if count != 1:
@@ -20,7 +20,7 @@ def replace_exact(path: Path, old: bytes, new: bytes, label: str) -> None:
         new = new.replace(b"\n", b"\r\n")
 
     updated = data.replace(old, new, 1)
-    if old in updated:
+    if require_old_absent and old in updated:
         raise RuntimeError(f"{label}: legacy pattern remains after migration")
     path.write_bytes(updated)
 
@@ -43,7 +43,18 @@ def main() -> int:
     # CrashHandler.cpp owns this symbol in the legacy Win32 build, but the RC6
     # x64 project intentionally excludes BlackBox/CrashHandler. Supply storage
     # only for Win64 so the original Win32 ownership and ABI remain untouched.
-    replace_exact(core_path, APP_PATH_OLD, APP_PATH_NEW, "xrCore/xrCore.cpp g_application_path")
+    replace_exact(
+        core_path,
+        APP_PATH_OLD,
+        APP_PATH_NEW,
+        "xrCore/xrCore.cpp g_application_path",
+        require_old_absent=False,
+    )
+    migrated = core_path.read_bytes()
+    if b"#ifdef _WIN64" not in migrated or b"char g_application_path[256] = {};" not in migrated:
+        raise RuntimeError("xrCore/xrCore.cpp g_application_path: Win64 storage definition was not installed")
+    if migrated.count(APP_PATH_OLD) != 1:
+        raise RuntimeError("xrCore/xrCore.cpp g_application_path: Win32 extern ownership was not preserved exactly once")
     print("[x64-abi] xrCore/xrCore.cpp: supplied Win64 g_application_path storage; Win32 keeps CrashHandler ownership")
 
     return 0
