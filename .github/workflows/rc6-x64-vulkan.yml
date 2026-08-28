@@ -20,15 +20,25 @@ jobs:
       - name: Checkout RC6 integration repo
         uses: actions/checkout@v4
 
-      - name: Reconstruct RC6 patch
+      - name: Reconstruct and verify RC6 patch
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $parts = Get-ChildItem "$env:GITHUB_WORKSPACE\patches\rc6_ci_xz.part*.txt" | Sort-Object Name
-          if (-not $parts) { throw 'RC6 patch chunks not found.' }
-          $encoded = (($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join '')
+          $parts = Get-ChildItem "$env:GITHUB_WORKSPACE\patches\rc6_ci_bin.part*" | Sort-Object Name
+          if ($parts.Count -ne 9) { throw "Expected 9 RC6 binary patch chunks, found $($parts.Count)." }
           $xz = Join-Path $env:RUNNER_TEMP 'RC6_CI_COMPACT.patch.xz'
-          [IO.File]::WriteAllBytes($xz, [Convert]::FromBase64String($encoded))
+          $stream = [IO.File]::Create($xz)
+          try {
+            foreach ($part in $parts) {
+              $bytes = [IO.File]::ReadAllBytes($part.FullName)
+              $stream.Write($bytes, 0, $bytes.Length)
+            }
+          } finally {
+            $stream.Dispose()
+          }
+          $actual = (Get-FileHash $xz -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'a249841be729169ed12a5109e2e95f9c77a46e9f193120c29f0bbc7b171cb838'
+          if ($actual -ne $expected) { throw "RC6 patch archive hash mismatch: $actual" }
           $seven = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
           if (-not (Test-Path $seven)) { throw '7-Zip is not available on the runner.' }
           $out = Join-Path $env:RUNNER_TEMP 'rc6_patch'
@@ -80,7 +90,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: STALKER_SHOC_RC6_X64_VULKAN
-          path: READY_RC6_X64_VULKAN
+          path: source/READY_RC6_X64_VULKAN
           if-no-files-found: error
           compression-level: 9
 
