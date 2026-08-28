@@ -1,0 +1,53 @@
+diff --git a/PREPARE_RC6_X64_DEPS.ps1 b/PREPARE_RC6_X64_DEPS.ps1
+index 4f1d1ab..24f4514 100644
+--- a/PREPARE_RC6_X64_DEPS.ps1
++++ b/PREPARE_RC6_X64_DEPS.ps1
+@@ -11,11 +11,36 @@ if(-not $Vcpkg -or -not (Test-Path (Join-Path $Vcpkg 'vcpkg.exe'))) {
+ }
+ $exe=Join-Path $Vcpkg 'vcpkg.exe'
+ $trip='x64-windows-static-md'
++$openalTrip='x64-windows'
++# Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
++# Keep two isolated manifests because Xiph is linked static-md while OpenAL stays a DLL.
++$manifestRoot=Join-Path $env:TEMP 'xray-rc6-vcpkg'
++$xiphManifest=Join-Path $manifestRoot 'xiph'
++$openalManifest=Join-Path $manifestRoot 'openal'
++$xiphInstall=Join-Path $manifestRoot 'installed-xiph'
++$openalInstall=Join-Path $manifestRoot 'installed-openal'
++New-Item -ItemType Directory -Force -Path $xiphManifest,$openalManifest | Out-Null
++@'
++{
++  "name": "xray-rc6-xiph",
++  "version-string": "1.0.0",
++  "dependencies": ["libogg", "libvorbis", "libtheora"]
++}
++'@ | Set-Content -Encoding utf8 (Join-Path $xiphManifest 'vcpkg.json')
++@'
++{
++  "name": "xray-rc6-openal",
++  "version-string": "1.0.0",
++  "dependencies": ["openal-soft"]
++}
++'@ | Set-Content -Encoding utf8 (Join-Path $openalManifest 'vcpkg.json')
+ if(-not $SkipInstall) {
+-  & $exe install "libogg:$trip" "libvorbis:$trip" "libtheora:$trip" "openal-soft:x64-windows"
+-  if($LASTEXITCODE -ne 0) { throw 'vcpkg install завершился ошибкой.' }
++  & $exe install "--x-manifest-root=$xiphManifest" "--x-install-root=$xiphInstall" "--triplet=$trip"
++  if($LASTEXITCODE -ne 0) { throw 'vcpkg Xiph manifest install завершился ошибкой.' }
++  & $exe install "--x-manifest-root=$openalManifest" "--x-install-root=$openalInstall" "--triplet=$openalTrip"
++  if($LASTEXITCODE -ne 0) { throw 'vcpkg OpenAL manifest install завершился ошибкой.' }
+ }
+-$inst=Join-Path $Vcpkg "installed\$trip"
++$inst=Join-Path $xiphInstall $trip
+ $incDst=Join-Path $Root 'third-party\include\x64'
+ $libDst=Join-Path $Root 'third-party\lib\x64'
+ New-Item -ItemType Directory -Force -Path $incDst,$libDst,(Join-Path $Root '..\libraries\x64'),(Join-Path $Root '..\bin_x64') | Out-Null
+@@ -24,7 +49,7 @@ foreach($d in @('ogg','vorbis','theora')) {
+   if(Test-Path $src) { Copy-Item -Recurse -Force $src $incDst }
+ }
+ # OpenAL Soft x64 replaces the legacy 32-bit Router/wrap_oal pair.
+-$openalInst=Join-Path $Vcpkg 'installed\x64-windows'
++$openalInst=Join-Path $openalInstall $openalTrip
+ $alHeaders=Join-Path $openalInst 'include\AL'
+ if(Test-Path $alHeaders){ Copy-Item -Recurse -Force $alHeaders $incDst }
+ $alLibCandidates=@((Join-Path $openalInst 'lib\OpenAL32.lib'),(Join-Path $openalInst 'lib\openal32.lib'))
