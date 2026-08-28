@@ -1,17 +1,19 @@
 --- a/PREPARE_RC6_X64_DEPS.ps1
 +++ b/PREPARE_RC6_X64_DEPS.ps1
-@@ -12,6 +12,10 @@
+@@ -12,6 +12,12 @@
  $exe=Join-Path $Vcpkg 'vcpkg.exe'
  $trip='x64-windows-static-md'
  $openalTrip='x64-windows'
-+$baseline=(& git -C $Vcpkg rev-parse HEAD 2>$null).Trim()
++$baselineLine=(& git ls-remote https://github.com/microsoft/vcpkg.git HEAD 2>$null | Select-Object -First 1)
++$baseline=(($baselineLine -split '\s+')[0]).Trim()
 +if($LASTEXITCODE -ne 0 -or $baseline -notmatch '^[0-9a-fA-F]{40}$') {
-+  throw 'Не удалось определить builtin-baseline текущего vcpkg checkout.'
++  throw 'Не удалось определить builtin-baseline официального microsoft/vcpkg registry.'
 +}
++Write-Host "Using vcpkg builtin-baseline $baseline"
  # Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
  # Keep two isolated manifests because Xiph is linked static-md while OpenAL stays a DLL.
  $manifestRoot=Join-Path $env:TEMP 'xray-rc6-vcpkg'
-@@ -20,20 +24,22 @@
+@@ -20,20 +26,22 @@
  $xiphInstall=Join-Path $manifestRoot 'installed-xiph'
  $openalInstall=Join-Path $manifestRoot 'installed-openal'
  New-Item -ItemType Directory -Force -Path $xiphManifest,$openalManifest | Out-Null
