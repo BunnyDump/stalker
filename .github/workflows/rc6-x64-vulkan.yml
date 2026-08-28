@@ -66,6 +66,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'RC6 patch preflight failed.' }
           git -C source apply "$env:RC6_PATCH"
           if ($LASTEXITCODE -ne 0) { throw 'RC6 patch application failed.' }
+
+          # Windows PowerShell 5.1 reads UTF-8 without BOM as the legacy ANSI code page.
+          # RC6 scripts contain Russian diagnostic text, so normalize them explicitly.
+          $utf8Bom = [Text.UTF8Encoding]::new($true)
+          Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File | ForEach-Object {
+            $text = [IO.File]::ReadAllText($_.FullName, [Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText($_.FullName, $text, $utf8Bom)
+          }
           git -C source status --short
 
       - name: Install DirectX SDK June 2010
