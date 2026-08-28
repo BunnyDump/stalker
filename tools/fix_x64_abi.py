@@ -133,6 +133,87 @@ def fix_x64_linker_machine(root: Path) -> None:
     )
 
 
+def fix_xrsound_x64_project(root: Path) -> None:
+    path = root / "xrSound" / "xrSound.vcxproj"
+    tree = ET.parse(path)
+    project = tree.getroot()
+
+    # DirectSound backend is intentionally disabled on Win64 by sound.cpp and
+    # SoundRender_CoreD.cpp is already excluded. Exclude its target peer too,
+    # otherwise it links against the absent SoundRenderD global.
+    target_found = False
+    target_excluded = False
+    for item in project.findall(f".//{Q('ClCompile')}"):
+        include = (item.get("Include") or "").replace("/", "\\").lower()
+        if include.endswith("soundrender_targetd.cpp"):
+            target_found = True
+            for node in item.findall(Q("ExcludedFromBuild")):
+                cond = (node.get("Condition") or "").replace(" ", "").lower()
+                if "$(platform)" in cond and "x64" in cond and (node.text or "").strip().lower() == "true":
+                    target_excluded = True
+                    break
+            if not target_excluded:
+                node = ET.SubElement(item, Q("ExcludedFromBuild"))
+                node.set("Condition", "'$(Platform)'=='x64'")
+                node.text = "true"
+                target_excluded = True
+            break
+    if not target_found or not target_excluded:
+        raise RuntimeError("xrSound: unable to exclude SoundRender_TargetD.cpp for x64")
+
+    # vorbisfile_static.lib contains the file/stream wrapper but depends on the
+    # core Vorbis decoder library. The historical xrSound project omitted it.
+    dependency_changes = 0
+    for group in project.findall(Q("ItemDefinitionGroup")):
+        if not is_x64_condition(group.get("Condition")):
+            continue
+        link = group.find(Q("Link"))
+        if link is None:
+            continue
+        deps = link.find(Q("AdditionalDependencies"))
+        if deps is None or not deps.text:
+            continue
+        items = [part.strip() for part in deps.text.split(";") if part.strip()]
+        lower = [part.lower() for part in items]
+        if "vorbisfile_static_d.lib" in lower and "vorbis_static_d.lib" not in lower:
+            idx = lower.index("vorbisfile_static_d.lib")
+            items.insert(idx, "vorbis_static_d.lib")
+            dependency_changes += 1
+        elif "vorbisfile_static.lib" in lower and "vorbis_static.lib" not in lower:
+            idx = lower.index("vorbisfile_static.lib")
+            items.insert(idx, "vorbis_static.lib")
+            dependency_changes += 1
+        deps.text = ";".join(items)
+
+    if dependency_changes == 0:
+        raise RuntimeError("xrSound: no x64 Vorbis dependency lists were repaired")
+
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+
+    # Re-read and validate the exact x64 invariants after serialization.
+    check = ET.parse(path).getroot()
+    bad_deps: list[str] = []
+    for group in check.findall(Q("ItemDefinitionGroup")):
+        if not is_x64_condition(group.get("Condition")):
+            continue
+        link = group.find(Q("Link"))
+        if link is None:
+            continue
+        deps = link.find(Q("AdditionalDependencies"))
+        text = (deps.text if deps is not None and deps.text else "").lower()
+        if "vorbisfile_static_d.lib" in text and "vorbis_static_d.lib" not in text:
+            bad_deps.append(group.get("Condition") or "<unknown>")
+        if "vorbisfile_static.lib" in text and "vorbis_static.lib" not in text:
+            bad_deps.append(group.get("Condition") or "<unknown>")
+    if bad_deps:
+        raise RuntimeError(f"xrSound: unresolved Vorbis x64 dependency lists: {bad_deps}")
+
+    print(
+        f"[x64-sound] SoundRender_TargetD.cpp excluded for x64; "
+        f"Vorbis dependency lists repaired={dependency_changes}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply targeted Win64 ABI/linkage fixes to X-Ray runtime sources.")
     parser.add_argument("root", nargs="?", default=".")
@@ -151,6 +232,7 @@ def main() -> int:
     # contain /MACHINE:I386 in several x64 configurations. Remove only the x64
     # forcing while leaving every Win32 configuration untouched.
     fix_x64_linker_machine(root)
+    fix_xrsound_x64_project(root)
 
     replace_exact(math_path, RAISE_OLD, RAISE_NEW, "xrCore/_math.cpp RaiseException")
     print("[x64-abi] xrCore/_math.cpp: thread-name RaiseException payload migrated DWORD -> ULONG_PTR")
