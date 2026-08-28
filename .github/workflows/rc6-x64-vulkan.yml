@@ -3,12 +3,14 @@ name: RC6 x64 Vulkan Build
 on:
   push:
     branches: [xray-rc6-vulkan-x64]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: rc6-x64-vulkan-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -79,6 +81,9 @@ jobs:
           git -C source apply "$baselineFix"
           if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg baseline fix application failed.' }
 
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_item_metadata.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 x64 item-metadata normalization failed.' }
+
           # Windows PowerShell 5.1 reads UTF-8 without BOM as the legacy ANSI code page.
           # RC6 scripts contain Russian diagnostic text, so normalize them explicitly.
           $utf8Bom = [Text.UTF8Encoding]::new($true)
@@ -88,17 +93,37 @@ jobs:
           }
           git -C source status --short
 
+      - name: Cache DirectX SDK June 2010
+        id: dxsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)
+          key: dxsdk-jun2010-v1
+
       - name: Install DirectX SDK June 2010
+        if: steps.dxsdk-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           choco install directx-sdk --yes --no-progress
           if ($LASTEXITCODE -ne 0) { throw 'DirectX SDK installation failed.' }
+
+      - name: Configure build dependencies
+        shell: pwsh
+        run: |
           $dx = 'C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\'
           if (-not (Test-Path (Join-Path $dx 'Include\d3d9.h'))) { throw 'DXSDK d3d9.h not found.' }
           "DXSDK_DIR=$dx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $vcpkg = $env:VCPKG_INSTALLATION_ROOT
           if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
           "VCPKG_ROOT=$vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binary archives
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: rc6-vcpkg-${{ runner.os }}-x64-${{ hashFiles('patches/rc6-vcpkg-*.patch') }}
+          restore-keys: |
+            rc6-vcpkg-${{ runner.os }}-x64-
 
       - name: Build RC6 x64 Vulkan Release
         shell: cmd
@@ -120,7 +145,7 @@ jobs:
         with:
           name: rc6-build-diagnostics
           path: |
-            source/intermediate/**
+            source/intermediate_x64/**
             source/**/*.log
           if-no-files-found: ignore
           retention-days: 7
