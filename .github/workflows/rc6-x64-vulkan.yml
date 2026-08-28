@@ -25,7 +25,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $parts = Get-ChildItem "$env:GITHUB_WORKSPACE\patches\rc6_ci_bin.part*" | Sort-Object Name
-          if ($parts.Count -ne 9) { throw "Expected 9 RC6 binary patch chunks, found $($parts.Count)." }
+          if ($parts.Count -ne 11) { throw "Expected 11 RC6 binary patch chunks, found $($parts.Count)." }
           $xz = Join-Path $env:RUNNER_TEMP 'RC6_CI_COMPACT.patch.xz'
           $stream = [IO.File]::Create($xz)
           try {
@@ -37,7 +37,7 @@ jobs:
             $stream.Dispose()
           }
           $actual = (Get-FileHash $xz -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected = 'a249841be729169ed12a5109e2e95f9c77a46e9f193120c29f0bbc7b171cb838'
+          $expected = 'a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482'
           if ($actual -ne $expected) { throw "RC6 patch archive hash mismatch: $actual" }
           $seven = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
           if (-not (Test-Path $seven)) { throw '7-Zip is not available on the runner.' }
