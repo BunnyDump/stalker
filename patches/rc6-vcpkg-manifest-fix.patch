@@ -51,3 +51,25 @@ index 4f1d1ab..24f4514 100644
  $alHeaders=Join-Path $openalInst 'include\AL'
  if(Test-Path $alHeaders){ Copy-Item -Recurse -Force $alHeaders $incDst }
  $alLibCandidates=@((Join-Path $openalInst 'lib\OpenAL32.lib'),(Join-Path $openalInst 'lib\openal32.lib'))
+
+diff --git a/xr_3da/ResourceManager_Scripting.cpp b/xr_3da/ResourceManager_Scripting.cpp
+--- a/xr_3da/ResourceManager_Scripting.cpp
++++ b/xr_3da/ResourceManager_Scripting.cpp
+@@ -300,7 +300,7 @@ void CResourceManager::LS_Load()
+ 	luaopen_table(LSVM);
+ 	luaopen_string(LSVM);
+ 	luaopen_math(LSVM);
+-#ifdef USE_JIT
++#if defined(USE_JIT) && !defined(_WIN64)
+ 	luaopen_jit(LSVM);
+ #endif
+ 
+@@ -382,7 +382,7 @@ void CResourceManager::LS_Load()
+ 	}
+ 	FS.file_list_close(folder);
+ 
+-#ifdef USE_JIT
++#if defined(USE_JIT) && !defined(_WIN64)
+ 	luaJIT_setmode(LSVM, LUAJIT_MODE_ENGINE, LUAJIT_MODE_ON);
+ #endif
+ }
