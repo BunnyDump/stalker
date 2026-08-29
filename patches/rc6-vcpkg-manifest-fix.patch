@@ -73,3 +73,16 @@ diff --git a/xr_3da/ResourceManager_Scripting.cpp b/xr_3da/ResourceManager_Scrip
  	luaJIT_setmode(LSVM, LUAJIT_MODE_ENGINE, LUAJIT_MODE_ON);
  #endif
  }
+
+diff --git a/Directory.Build.targets b/Directory.Build.targets
+new file mode 100644
+--- /dev/null
++++ b/Directory.Build.targets
+@@ -0,0 +1,8 @@
++<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
++  <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(DXSDK_DIR)'!=''">
++    <Link>
++      <AdditionalLibraryDirectories>$(DXSDK_DIR)Lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
++    </Link>
++  </ItemDefinitionGroup>
++</Project>
