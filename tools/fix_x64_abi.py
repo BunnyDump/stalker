@@ -24,6 +24,28 @@ SYSMETRICS_OLD = b"#define NOSYSMETRICS"
 SYSMETRICS_NEW = b"// NOSYSMETRICS disabled for x64: engine requires GetSystemMetrics declarations"
 DLGPROC_OLD = b"static BOOL CALLBACK logDlgProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp)"
 DLGPROC_NEW = b"static INT_PTR CALLBACK logDlgProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp)"
+GPU_VENDOR_HEADERS_OLD = b'''#ifndef _EDITOR
+#include "NVAPI/nvapi.h"
+#include "ATI/atimgpud.h"
+
+#pragma comment(lib, "nvapi")
+#pragma comment(lib, "atimgpud_mtdll_x86")
+#endif'''
+GPU_VENDOR_HEADERS_NEW = b'''#if !defined(_EDITOR) && !defined(_WIN64)
+#include "NVAPI/nvapi.h"
+#include "ATI/atimgpud.h"
+
+#pragma comment(lib, "nvapi")
+#pragma comment(lib, "atimgpud_mtdll_x86")
+#endif'''
+GPU_VENDOR_CODE_OLD = b'''namespace
+{
+#ifndef _EDITOR
+u32 GetNVGpuNum()'''
+GPU_VENDOR_CODE_NEW = b'''namespace
+{
+#if !defined(_EDITOR) && !defined(_WIN64)
+u32 GetNVGpuNum()'''
 
 
 def native_newlines(data: bytes, replacement: bytes) -> bytes:
@@ -230,9 +252,10 @@ def main() -> int:
     core_path = root / "xrCore" / "xrCore.cpp"
     platform_path = root / "xrCore" / "xrCore_platform.h"
     xray_path = root / "xr_3da" / "x_ray.cpp"
+    hwcaps_path = root / "xr_3da" / "HWCaps.cpp"
     lua_stub = root / "xrLua" / "src" / "ljit_x64_stub.c"
     lua_debug = root / "xrLua" / "src" / "ldebug.c"
-    for path in (math_path, core_path, platform_path, xray_path, lua_stub, lua_debug):
+    for path in (math_path, core_path, platform_path, xray_path, hwcaps_path, lua_stub, lua_debug):
         if not path.is_file():
             raise FileNotFoundError(path)
 
@@ -282,6 +305,21 @@ def main() -> int:
     # but it is a 32-bit return value and no longer matches DLGPROC on Win64.
     replace_exact(xray_path, DLGPROC_OLD, DLGPROC_NEW, "xr_3da/x_ray.cpp logDlgProc Win64 ABI")
     print("[x64-winapi] xr_3da/x_ray.cpp: logDlgProc return type migrated BOOL -> INT_PTR")
+
+    # This legacy SHOC tree vendors only 32-bit NVAPI and ATI multi-GPU import
+    # libraries (nvapi.lib and atimgpud_mtdll_x86.lib). Linking either from an
+    # x64 image causes a machine-type conflict. Multi-GPU counting is merely a
+    # capability hint, and HWCaps already has a one-GPU fallback for builds where
+    # the vendor helpers are unavailable. Reuse that fallback on Win64 while
+    # preserving the original vendor probing and link pragmas for Win32.
+    replace_exact(hwcaps_path, GPU_VENDOR_HEADERS_OLD, GPU_VENDOR_HEADERS_NEW, "xr_3da/HWCaps.cpp vendor headers/link pragmas")
+    replace_exact(hwcaps_path, GPU_VENDOR_CODE_OLD, GPU_VENDOR_CODE_NEW, "xr_3da/HWCaps.cpp vendor GPU-count implementation")
+    migrated_hwcaps = hwcaps_path.read_bytes()
+    if migrated_hwcaps.count(b"#if !defined(_EDITOR) && !defined(_WIN64)") != 2:
+        raise RuntimeError("xr_3da/HWCaps.cpp: expected two Win64 exclusions for legacy vendor GPU-count code")
+    if b'#pragma comment(lib, "nvapi")' not in migrated_hwcaps or b'#pragma comment(lib, "atimgpud_mtdll_x86")' not in migrated_hwcaps:
+        raise RuntimeError("xr_3da/HWCaps.cpp: Win32 vendor link pragmas were not preserved")
+    print("[x64-gpu-count] disabled legacy 32-bit NVAPI/ATI GPU-count libraries on Win64; Win32 behavior preserved")
 
     return 0
 
