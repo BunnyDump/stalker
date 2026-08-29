@@ -1,6 +1,6 @@
 --- a/PREPARE_RC6_X64_DEPS.ps1
 +++ b/PREPARE_RC6_X64_DEPS.ps1
-@@ -12,6 +12,22 @@
+@@ -12,6 +12,21 @@
  $exe=Join-Path $Vcpkg 'vcpkg.exe'
  $trip='x64-windows-static-md'
  $openalTrip='x64-windows'
@@ -22,7 +22,7 @@
  # Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
  # Keep two isolated manifests because Xiph is linked static-md while OpenAL stays a DLL.
  $manifestRoot=Join-Path $env:TEMP 'xray-rc6-vcpkg'
-@@ -20,20 +36,22 @@
+@@ -20,20 +35,22 @@
  $xiphInstall=Join-Path $manifestRoot 'installed-xiph'
  $openalInstall=Join-Path $manifestRoot 'installed-openal'
  New-Item -ItemType Directory -Force -Path $xiphManifest,$openalManifest | Out-Null
