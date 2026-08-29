@@ -167,9 +167,6 @@ def fix_xrsound_x64_project(root: Path) -> None:
     tree = ET.parse(path)
     project = tree.getroot()
 
-    # DirectSound backend is intentionally disabled on Win64 by sound.cpp and
-    # SoundRender_CoreD.cpp is already excluded. Exclude its target peer too,
-    # otherwise it links against the absent SoundRenderD global.
     target_found = False
     target_excluded = False
     for item in project.findall(f".//{Q('ClCompile')}"):
@@ -190,8 +187,6 @@ def fix_xrsound_x64_project(root: Path) -> None:
     if not target_found or not target_excluded:
         raise RuntimeError("xrSound: unable to exclude SoundRender_TargetD.cpp for x64")
 
-    # vorbisfile_static.lib contains the file/stream wrapper but depends on the
-    # core Vorbis decoder library. The historical xrSound project omitted it.
     dependency_changes = 0
     for group in project.findall(Q("ItemDefinitionGroup")):
         if not is_x64_condition(group.get("Condition")):
@@ -219,7 +214,6 @@ def fix_xrsound_x64_project(root: Path) -> None:
 
     tree.write(path, encoding="utf-8", xml_declaration=True)
 
-    # Re-read and validate the exact x64 invariants after serialization.
     check = ET.parse(path).getroot()
     bad_deps: list[str] = []
     for group in check.findall(Q("ItemDefinitionGroup")):
@@ -243,6 +237,57 @@ def fix_xrsound_x64_project(root: Path) -> None:
     )
 
 
+def fix_xr3da_x64_dxsdk_link(root: Path) -> None:
+    path = root / "xr_3da" / "XR_3DA.vcxproj"
+    tree = ET.parse(path)
+    project = tree.getroot()
+    dxsdk_x64 = r"$(DXSDK_DIR)Lib\x64"
+    x64_links = 0
+    changed = 0
+
+    for group in project.findall(Q("ItemDefinitionGroup")):
+        if not is_x64_condition(group.get("Condition")):
+            continue
+        link = group.find(Q("Link"))
+        if link is None:
+            continue
+        x64_links += 1
+        dirs = link.find(Q("AdditionalLibraryDirectories"))
+        current = dirs.text.strip() if dirs is not None and dirs.text else ""
+        entries = [part.strip() for part in current.split(";") if part.strip()]
+        if any(part.lower() == dxsdk_x64.lower() for part in entries):
+            continue
+        if dirs is None:
+            dirs = ET.SubElement(link, Q("AdditionalLibraryDirectories"))
+        tail = current or "%(AdditionalLibraryDirectories)"
+        dirs.text = f"{dxsdk_x64};{tail}"
+        changed += 1
+
+    if x64_links == 0:
+        raise RuntimeError("XR_3DA: no x64 Link configuration found for DirectX SDK repair")
+    if changed:
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+
+    check = ET.parse(path).getroot()
+    missing: list[str] = []
+    checked = 0
+    for group in check.findall(Q("ItemDefinitionGroup")):
+        if not is_x64_condition(group.get("Condition")):
+            continue
+        link = group.find(Q("Link"))
+        if link is None:
+            continue
+        checked += 1
+        dirs = link.find(Q("AdditionalLibraryDirectories"))
+        entries = [part.strip().lower() for part in ((dirs.text if dirs is not None and dirs.text else "").split(";")) if part.strip()]
+        if dxsdk_x64.lower() not in entries:
+            missing.append(group.get("Condition") or "<unknown>")
+    if checked == 0 or missing:
+        raise RuntimeError(f"XR_3DA: DirectX SDK x64 linker path missing from configurations: {missing}")
+
+    print(f"[x64-dxsdk] XR_3DA x64 linker configs={checked} repaired={changed} path={dxsdk_x64}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply targeted Win64 ABI/linkage fixes to X-Ray runtime sources.")
     parser.add_argument("root", nargs="?", default=".")
@@ -260,18 +305,13 @@ def main() -> int:
         if not path.is_file():
             raise FileNotFoundError(path)
 
-    # Project-level linker options copied from the original VS projects still
-    # contain /MACHINE:I386 in several x64 configurations. Remove only the x64
-    # forcing while leaving every Win32 configuration untouched.
     fix_x64_linker_machine(root)
     fix_xrsound_x64_project(root)
+    fix_xr3da_x64_dxsdk_link(root)
 
     replace_exact(math_path, RAISE_OLD, RAISE_NEW, "xrCore/_math.cpp RaiseException")
     print("[x64-abi] xrCore/_math.cpp: thread-name RaiseException payload migrated DWORD -> ULONG_PTR")
 
-    # CrashHandler.cpp owns this symbol in the legacy Win32 build, but the RC6
-    # x64 project intentionally excludes BlackBox/CrashHandler. Supply storage
-    # only for Win64 so the original Win32 ownership and ABI remain untouched.
     replace_exact(core_path, APP_PATH_OLD, APP_PATH_NEW, "xrCore/xrCore.cpp g_application_path", require_old_absent=False)
     migrated = core_path.read_bytes()
     if b"#ifdef _WIN64" not in migrated or b"char g_application_path[256] = {};" not in migrated:
@@ -280,39 +320,21 @@ def main() -> int:
         raise RuntimeError("xrCore/xrCore.cpp g_application_path: Win32 extern ownership was not preserved exactly once")
     print("[x64-abi] xrCore/xrCore.cpp: supplied Win64 g_application_path storage; Win32 keeps CrashHandler ownership")
 
-    # The x64 interpreter stub is part of xrLua itself. LUA_BUILD_AS_DLL makes
-    # LUA_API dllimport unless LUA_CORE is defined before lua.h, which makes
-    # MSVC reject these definitions with C2491. Match only the include line so
-    # the migration is independent of CRLF/LF source line endings.
     replace_exact(lua_stub, LUA_STUB_OLD, LUA_STUB_NEW, "xrLua/ljit_x64_stub.c LUA_CORE", require_old_absent=False)
     if lua_stub.read_bytes().count(b"#define LUA_CORE") != 1:
         raise RuntimeError("xrLua/ljit_x64_stub.c: LUA_CORE was not installed exactly once")
     print("[x64-abi] xrLua/src/ljit_x64_stub.c: x64 JIT stubs now export from xrLua instead of dllimport")
 
-    # Lua 5.1/LuaJIT-era cast_int is absent from this tree. The x64 fallback in
-    # ldebug.c only needs an explicit narrowing through Lua's existing cast macro.
     replace_exact(lua_debug, CAST_INT_OLD, CAST_INT_NEW, "xrLua/ldebug.c currentpc cast")
     print("[x64-abi] xrLua/src/ldebug.c: removed undefined cast_int from Win64 currentpc fallback")
 
-    # The historical platform header defines NOSYSMETRICS before windows.h.
-    # Modern Windows SDKs then intentionally hide GetSystemMetrics and SM_CX/CYSCREEN.
-    # RC6 uses these APIs in the x64 engine, so retain the declarations and target
-    # Windows 7 API level, which also exposes SetProcessDPIAware used by RC6.
     replace_exact(platform_path, WINNT_OLD, WINNT_NEW, "xrCore/xrCore_platform.h _WIN32_WINNT")
     replace_exact(platform_path, SYSMETRICS_OLD, SYSMETRICS_NEW, "xrCore/xrCore_platform.h NOSYSMETRICS")
     print("[x64-winapi] xrCore/xrCore_platform.h: Windows 7 API level and system metrics declarations enabled")
 
-    # DLGPROC returns INT_PTR. BOOL happened to be ABI-compatible on 32-bit,
-    # but it is a 32-bit return value and no longer matches DLGPROC on Win64.
     replace_exact(xray_path, DLGPROC_OLD, DLGPROC_NEW, "xr_3da/x_ray.cpp logDlgProc Win64 ABI")
     print("[x64-winapi] xr_3da/x_ray.cpp: logDlgProc return type migrated BOOL -> INT_PTR")
 
-    # This legacy SHOC tree vendors only 32-bit NVAPI and ATI multi-GPU import
-    # libraries (nvapi.lib and atimgpud_mtdll_x86.lib). Linking either from an
-    # x64 image causes a machine-type conflict. Multi-GPU counting is merely a
-    # capability hint, and HWCaps already has a one-GPU fallback for builds where
-    # the vendor helpers are unavailable. Reuse that fallback on Win64 while
-    # preserving the original vendor probing and link pragmas for Win32.
     replace_exact(hwcaps_path, GPU_VENDOR_HEADERS_OLD, GPU_VENDOR_HEADERS_NEW, "xr_3da/HWCaps.cpp vendor headers/link pragmas")
     replace_exact(hwcaps_path, GPU_VENDOR_CODE_OLD, GPU_VENDOR_CODE_NEW, "xr_3da/HWCaps.cpp vendor GPU-count implementation")
     migrated_hwcaps = hwcaps_path.read_bytes()
