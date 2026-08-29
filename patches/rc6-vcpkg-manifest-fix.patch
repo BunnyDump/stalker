@@ -2,20 +2,11 @@ diff --git a/PREPARE_RC6_X64_DEPS.ps1 b/PREPARE_RC6_X64_DEPS.ps1
 index 4f1d1ab..24f4514 100644
 --- a/PREPARE_RC6_X64_DEPS.ps1
 +++ b/PREPARE_RC6_X64_DEPS.ps1
-@@ -11,11 +11,45 @@ if(-not $Vcpkg -or -not (Test-Path (Join-Path $Vcpkg 'vcpkg.exe'))) {
+@@ -11,11 +11,36 @@ if(-not $Vcpkg -or -not (Test-Path (Join-Path $Vcpkg 'vcpkg.exe'))) {
  }
  $exe=Join-Path $Vcpkg 'vcpkg.exe'
  $trip='x64-windows-static-md'
 +$openalTrip='x64-windows'
-+$graph=Join-Path $PSScriptRoot 'xr_3da\xrGame\graph_abstract.h'
-+$graphText=[IO.File]::ReadAllText($graph)
-+$legacyGraph="`tu32 m_edge_count;"
-+$fixedGraph="`tsize_t m_edge_count;"
-+$legacyCount=([regex]::Matches($graphText,[regex]::Escape($legacyGraph))).Count
-+if($legacyCount -ne 1) { throw "graph_abstract.h: expected one u32 m_edge_count, found $legacyCount" }
-+$graphText=$graphText.Replace($legacyGraph,$fixedGraph)
-+[IO.File]::WriteAllText($graph,$graphText,[Text.UTF8Encoding]::new($false))
-+Write-Host '[x64-graph] m_edge_count storage widened u32 -> size_t'
 +# Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
 +# Keep two isolated manifests because Xiph is linked static-md while OpenAL stays a DLL.
 +$manifestRoot=Join-Path $env:TEMP 'xray-rc6-vcpkg'
@@ -51,7 +42,7 @@ index 4f1d1ab..24f4514 100644
  $incDst=Join-Path $Root 'third-party\include\x64'
  $libDst=Join-Path $Root 'third-party\lib\x64'
  New-Item -ItemType Directory -Force -Path $incDst,$libDst,(Join-Path $Root '..\libraries\x64'),(Join-Path $Root '..\bin_x64') | Out-Null
-@@ -24,7 +58,7 @@ foreach($d in @('ogg','vorbis','theora')) {
+@@ -24,7 +49,7 @@ foreach($d in @('ogg','vorbis','theora')) {
    if(Test-Path $src) { Copy-Item -Recurse -Force $src $incDst }
  }
  # OpenAL Soft x64 replaces the legacy 32-bit Router/wrap_oal pair.
