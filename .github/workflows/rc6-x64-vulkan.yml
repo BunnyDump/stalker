@@ -140,9 +140,49 @@ jobs:
             rc6-vcpkg-${{ runner.os }}-x64-
 
       - name: Build RC6 x64 Vulkan Release
-        shell: cmd
+        shell: pwsh
         working-directory: source
-        run: BUILD_RC6_X64_VULKAN_RELEASE.bat
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $PWD 'rc6-build.log'
+          & cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' 2>&1 | Tee-Object -FilePath $log
+          $exitCode = $LASTEXITCODE
+
+          if ($exitCode -ne 0) {
+            $candidateLogs = @($log)
+            $candidateLogs += Get-ChildItem -Path $PWD -Recurse -File -Include '*.log' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -ne $log } |
+              Select-Object -ExpandProperty FullName
+
+            $patterns = @(
+              '(?i)fatal error C\d{4}',
+              '(?i)\berror C\d{4}\b',
+              '(?i)\berror LNK\d{4}\b',
+              '(?i)\berror MSB\d{4}\b',
+              '(?i): error [A-Z]+\d{3,5}:'
+            )
+
+            $first = $null
+            foreach ($file in $candidateLogs) {
+              if (-not (Test-Path $file)) { continue }
+              $match = Select-String -Path $file -Pattern $patterns -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($match) {
+                $first = $match
+                break
+              }
+            }
+
+            if ($first) {
+              $line = ($first.Line -replace '%','%25' -replace "`r",'%0D' -replace "`n",'%0A')
+              Write-Host "::error title=First RC6 compiler error::$line"
+              Write-Host "FIRST_RC6_BUILD_ERROR: $($first.Line)"
+              Write-Host "FIRST_RC6_BUILD_ERROR_FILE: $($first.Path):$($first.LineNumber)"
+            } else {
+              Write-Host '::error title=RC6 build failed::No recognized MSVC/MSBuild error line was found in captured logs.'
+            }
+
+            exit $exitCode
+          }
 
       - name: Save vcpkg binary archives
         if: always() && steps.vcpkg-cache.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -166,6 +206,7 @@ jobs:
         with:
           name: rc6-build-diagnostics
           path: |
+            source/rc6-build.log
             source/intermediate_x64/**
             source/**/*.log
           if-no-files-found: ignore
