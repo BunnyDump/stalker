@@ -78,7 +78,7 @@ diff --git a/Directory.Build.targets b/Directory.Build.targets
 new file mode 100644
 --- /dev/null
 +++ b/Directory.Build.targets
-@@ -0,0 +1,8 @@
+@@ -0,0 +1,7 @@
 +<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 +  <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(DXSDK_DIR)'!=''">
 +    <Link>
