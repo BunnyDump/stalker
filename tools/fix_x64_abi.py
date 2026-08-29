@@ -18,6 +18,12 @@ LUA_STUB_OLD = b'#include "lua.h"'
 LUA_STUB_NEW = b'#define LUA_CORE\n#include "lua.h"'
 CAST_INT_OLD = b"cast_int(pc - p->code)"
 CAST_INT_NEW = b"cast(int, pc - p->code)"
+WINNT_OLD = b"#define _WIN32_WINNT 0x0500"
+WINNT_NEW = b"#define _WIN32_WINNT 0x0601"
+SYSMETRICS_OLD = b"#define NOSYSMETRICS"
+SYSMETRICS_NEW = b"// NOSYSMETRICS disabled for x64: engine requires GetSystemMetrics declarations"
+DLGPROC_OLD = b"static BOOL CALLBACK logDlgProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp)"
+DLGPROC_NEW = b"static INT_PTR CALLBACK logDlgProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp)"
 
 
 def native_newlines(data: bytes, replacement: bytes) -> bytes:
@@ -222,9 +228,11 @@ def main() -> int:
     root = Path(args.root).resolve()
     math_path = root / "xrCore" / "_math.cpp"
     core_path = root / "xrCore" / "xrCore.cpp"
+    platform_path = root / "xrCore" / "xrCore_platform.h"
+    xray_path = root / "xr_3da" / "x_ray.cpp"
     lua_stub = root / "xrLua" / "src" / "ljit_x64_stub.c"
     lua_debug = root / "xrLua" / "src" / "ldebug.c"
-    for path in (math_path, core_path, lua_stub, lua_debug):
+    for path in (math_path, core_path, platform_path, xray_path, lua_stub, lua_debug):
         if not path.is_file():
             raise FileNotFoundError(path)
 
@@ -261,6 +269,19 @@ def main() -> int:
     # ldebug.c only needs an explicit narrowing through Lua's existing cast macro.
     replace_exact(lua_debug, CAST_INT_OLD, CAST_INT_NEW, "xrLua/ldebug.c currentpc cast")
     print("[x64-abi] xrLua/src/ldebug.c: removed undefined cast_int from Win64 currentpc fallback")
+
+    # The historical platform header defines NOSYSMETRICS before windows.h.
+    # Modern Windows SDKs then intentionally hide GetSystemMetrics and SM_CX/CYSCREEN.
+    # RC6 uses these APIs in the x64 engine, so retain the declarations and target
+    # Windows 7 API level, which also exposes SetProcessDPIAware used by RC6.
+    replace_exact(platform_path, WINNT_OLD, WINNT_NEW, "xrCore/xrCore_platform.h _WIN32_WINNT")
+    replace_exact(platform_path, SYSMETRICS_OLD, SYSMETRICS_NEW, "xrCore/xrCore_platform.h NOSYSMETRICS")
+    print("[x64-winapi] xrCore/xrCore_platform.h: Windows 7 API level and system metrics declarations enabled")
+
+    # DLGPROC returns INT_PTR. BOOL happened to be ABI-compatible on 32-bit,
+    # but it is a 32-bit return value and no longer matches DLGPROC on Win64.
+    replace_exact(xray_path, DLGPROC_OLD, DLGPROC_NEW, "xr_3da/x_ray.cpp logDlgProc Win64 ABI")
+    print("[x64-winapi] xr_3da/x_ray.cpp: logDlgProc return type migrated BOOL -> INT_PTR")
 
     return 0
 
