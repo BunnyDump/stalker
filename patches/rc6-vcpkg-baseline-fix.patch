@@ -1,9 +1,18 @@
 --- a/PREPARE_RC6_X64_DEPS.ps1
 +++ b/PREPARE_RC6_X64_DEPS.ps1
-@@ -21,6 +21,12 @@
- $graphText=$graphText.Replace($legacyGraph,$fixedGraph)
- [IO.File]::WriteAllText($graph,$graphText,[Text.UTF8Encoding]::new($false))
- Write-Host '[x64-graph] m_edge_count storage widened u32 -> size_t'
+@@ -12,6 +12,22 @@
+ $exe=Join-Path $Vcpkg 'vcpkg.exe'
+ $trip='x64-windows-static-md'
+ $openalTrip='x64-windows'
++$graph=Join-Path $PSScriptRoot 'xr_3da\xrGame\graph_abstract.h'
++$graphText=[IO.File]::ReadAllText($graph)
++$legacyGraph="`tu32 m_edge_count;"
++$fixedGraph="`tsize_t m_edge_count;"
++$legacyCount=([regex]::Matches($graphText,[regex]::Escape($legacyGraph))).Count
++if($legacyCount -ne 1) { throw "graph_abstract.h: expected one u32 m_edge_count, found $legacyCount" }
++$graphText=$graphText.Replace($legacyGraph,$fixedGraph)
++[IO.File]::WriteAllText($graph,$graphText,[Text.UTF8Encoding]::new($false))
++Write-Host '[x64-graph] m_edge_count storage widened u32 -> size_t'
 +$baselineLine=(& git ls-remote https://github.com/microsoft/vcpkg.git HEAD 2>$null | Select-Object -First 1)
 +$baseline=(($baselineLine -split '\s+')[0]).Trim()
 +if($LASTEXITCODE -ne 0 -or $baseline -notmatch '^[0-9a-fA-F]{40}$') {
@@ -13,7 +22,7 @@
  # Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
  # Keep two isolated manifests because Xiph is linked static-md while OpenAL stays a DLL.
  $manifestRoot=Join-Path $env:TEMP 'xray-rc6-vcpkg'
-@@ -29,20 +35,22 @@
+@@ -20,20 +36,22 @@
  $xiphInstall=Join-Path $manifestRoot 'installed-xiph'
  $openalInstall=Join-Path $manifestRoot 'installed-openal'
  New-Item -ItemType Directory -Force -Path $xiphManifest,$openalManifest | Out-Null
