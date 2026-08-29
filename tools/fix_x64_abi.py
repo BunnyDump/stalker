@@ -56,6 +56,7 @@ def native_newlines(data: bytes, replacement: bytes) -> bytes:
 
 def replace_exact(path: Path, old: bytes, new: bytes, label: str, require_old_absent: bool = True) -> None:
     data = path.read_bytes()
+    old = native_newlines(data, old)
     count = data.count(old)
     if count != 1:
         raise RuntimeError(f"{label}: expected exactly one legacy pattern, found {count}")
