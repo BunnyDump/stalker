@@ -1,4 +1,4 @@
-name: RC6 NVAPI x64 Diagnostics
+name: RC6 x64 Compact Diagnostics
 
 on:
   push:
@@ -9,14 +9,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc6-nvapi-diagnostics-${{ github.ref }}
+  group: rc6-compact-diagnostics-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   diagnose:
-    name: Diagnose NVAPI x64 linkage
+    name: Compact first-error diagnostics
     runs-on: windows-2022
-    timeout-minutes: 30
+    timeout-minutes: 90
 
     steps:
       - name: Checkout RC6 integration repo
@@ -88,32 +88,72 @@ jobs:
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_abi.py" "$env:GITHUB_WORKSPACE\source"
           if ($LASTEXITCODE -ne 0) { throw 'RC6 Win64 ABI migration failed.' }
 
-      - name: Diagnose NVAPI x64 linkage
+          $utf8Bom = [Text.UTF8Encoding]::new($true)
+          Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File | ForEach-Object {
+            $text = [IO.File]::ReadAllText($_.FullName, [Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText($_.FullName, $text, $utf8Bom)
+          }
+
+      - name: Restore DirectX SDK June 2010 cache
+        id: dxsdk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)
+          key: dxsdk-jun2010-v1
+
+      - name: Install DirectX SDK June 2010
+        if: steps.dxsdk-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          choco install directx-sdk --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'DirectX SDK installation failed.' }
+
+      - name: Configure build dependencies
+        shell: pwsh
+        run: |
+          $dx = 'C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\'
+          if (-not (Test-Path (Join-Path $dx 'Include\d3d9.h'))) { throw 'DXSDK d3d9.h not found.' }
+          "DXSDK_DIR=$dx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
+          "VCPKG_ROOT=$vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Compact RC6 x64 Vulkan build
         shell: pwsh
         working-directory: source
         run: |
-          $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $PWD 'rc6-build.log'
+          & cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' *> $log
+          $exitCode = $LASTEXITCODE
 
-          Write-Host '=== NVAPI LIBRARY FILES ==='
-          $libs = @(Get-ChildItem -Path . -Recurse -File -Filter 'nvapi*.lib' -ErrorAction SilentlyContinue)
-          if ($libs.Count -eq 0) {
-            Write-Host 'NVAPI_LIB_FILE: NONE'
+          $patterns = @(
+            '(?i)fatal error C\d{4}',
+            '(?i)\berror C\d{4}\b',
+            '(?i)\berror LNK\d{4}\b',
+            '(?i)\bfatal error LNK\d{4}\b',
+            '(?i)\berror MSB\d{4}\b',
+            '(?i): error [A-Z]+\d{3,5}:'
+          )
+
+          $first = Select-String -Path $log -Pattern $patterns -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($first) {
+            Write-Host "FIRST_RC6_BUILD_ERROR: $($first.Line)"
+            Write-Host "FIRST_RC6_BUILD_ERROR_FILE: $($first.Path):$($first.LineNumber)"
           } else {
-            foreach ($lib in $libs) {
-              Write-Host ("NVAPI_LIB_FILE: {0} | {1} bytes" -f $lib.FullName, $lib.Length)
-            }
+            Write-Host 'FIRST_RC6_BUILD_ERROR: NONE_MATCHED'
+            Write-Host 'RC6_BUILD_LOG_TAIL_BEGIN'
+            Get-Content $log -Tail 40 | ForEach-Object { Write-Host $_ }
+            Write-Host 'RC6_BUILD_LOG_TAIL_END'
           }
+          Write-Host "RC6_BUILD_EXIT_CODE: $exitCode"
+          exit $exitCode
 
-          Write-Host '=== NVAPI TEXT/PROJECT REFERENCES ==='
-          $extensions = @('.vcxproj','.props','.targets','.sln','.bat','.cmd','.ps1','.py','.cpp','.c','.h','.hpp','.def','.txt')
-          $files = Get-ChildItem -Path . -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $extensions -contains $_.Extension.ToLowerInvariant() }
-          $matches = @($files | Select-String -Pattern 'nvapi(?:64)?\.lib|\bnvapi\b' -AllMatches -CaseSensitive:$false -ErrorAction SilentlyContinue)
-          if ($matches.Count -eq 0) {
-            Write-Host 'NVAPI_REFERENCE: NONE'
-          } else {
-            foreach ($match in ($matches | Select-Object -First 300)) {
-              Write-Host ("NVAPI_REFERENCE: {0}:{1}: {2}" -f $match.Path, $match.LineNumber, $match.Line.Trim())
-            }
-          }
-
-          Write-Host ("NVAPI_SUMMARY: libs={0}; references={1}" -f $libs.Count, $matches.Count)
+      - name: Upload compact build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-compact-build-diagnostics
+          path: source/rc6-build.log
+          if-no-files-found: error
+          retention-days: 7
