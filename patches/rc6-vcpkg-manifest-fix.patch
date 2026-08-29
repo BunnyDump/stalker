@@ -86,12 +86,3 @@ new file mode 100644
 +    </Link>
 +  </ItemDefinitionGroup>
 +</Project>
-
-diff --git a/xr_3da/xrGame/graph_abstract.h b/xr_3da/xrGame/graph_abstract.h
---- a/xr_3da/xrGame/graph_abstract.h
-+++ b/xr_3da/xrGame/graph_abstract.h
-@@ -31,3 +31,3 @@ class CGraphAbstract
-   private:
- 	VERTICES m_vertices;
--	u32 m_edge_count;
-+	size_t m_edge_count;
