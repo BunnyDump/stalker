@@ -13,6 +13,8 @@ from fix_vulkan_resource_declaration_order import fix as fix_resource_declaratio
 from decouple_vulkan_sun_math import decouple as decouple_vulkan_sun_math
 from fix_vulkan_sun_math_division import fix as fix_sun_math_division
 from decouple_vulkan_r2_capabilities import decouple as decouple_vulkan_r2_capabilities
+from decouple_vulkan_rendertarget_formats import decouple as decouple_vulkan_rendertarget_formats
+from enable_vulkan_engine_loader import install as install_vulkan_engine_loader
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -83,11 +85,13 @@ def harden(root: Path) -> None:
     decouple_vulkan_sun_math(root)
     fix_sun_math_division(root)
     decouple_vulkan_r2_capabilities(root)
-    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources + renderer-neutral sun/R2 capability policy installed")
+    decouple_vulkan_rendertarget_formats(root)
+    install_vulkan_engine_loader(root)
+    print("[vulkan-capability] consolidated native runtime + pipeline + resources + decoupling + engine loader installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Make the Vulkan capability probe independent from the active renderer lifecycle.")
+    parser = argparse.ArgumentParser(description="Materialize the consolidated RC6 native Vulkan migration stack.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
