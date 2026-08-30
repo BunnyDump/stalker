@@ -4,6 +4,9 @@ import argparse
 from pathlib import Path
 
 
+UPLOAD_CAPACITY_LITERAL = "67108864ull"
+
+
 def harden(root: Path) -> None:
     source = root.resolve() / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
     if not source.is_file():
@@ -11,17 +14,13 @@ def harden(root: Path) -> None:
     text = source.read_text(encoding="utf-8")
 
     # Swapchain recreation must not invalidate long-lived material descriptors, sampler,
-    # pipeline layout, pipeline cache, uniform/upload buffers, or dynamic stream buffers.
+    # pipeline layout/cache, uniform/upload buffers, or dynamic stream buffers.
     fn = text.find("    void xr_vk_destroy_frame_resources()\n    {")
     window = text.find("    void xr_vk_destroy_window_runtime()", fn)
     if fn < 0 or window < 0:
         raise RuntimeError("Vulkan resource lifetime: destroy functions not found")
-    body = text[fn:window]
 
     if "void xr_vk_destroy_swapchain_resources()" not in text:
-        # Build the partial destroyer from the known swapchain/frame-owned pieces. It is
-        # intentionally explicit so future additions fail validation instead of silently
-        # moving device-lifetime resources into resize teardown.
         partial = r'''    void xr_vk_destroy_swapchain_resources()
     {
         if (g_device != VK_NULL_HANDLE && g_vkDeviceWaitIdle)
@@ -79,8 +78,7 @@ def harden(root: Path) -> None:
 '''
         text = text[:fn] + partial + text[fn:]
 
-    # Resize/out-of-date paths use the partial destroyer; full shutdown keeps the full
-    # destroyer so device-lifetime resources are released exactly once.
+    # Resize/out-of-date paths use the partial destroyer; shutdown keeps the full destroyer.
     resize_start = text.find("bool xr_vk_bootstrap_resize(unsigned width, unsigned height)")
     recreate_start = text.find("bool xr_vk_recreate_swapchain_from_window()")
     frame_start = text.find("bool xr_vk_bootstrap_frame()")
@@ -90,8 +88,6 @@ def harden(root: Path) -> None:
     segment = segment.replace("xr_vk_destroy_frame_resources();", "xr_vk_destroy_swapchain_resources();")
     text = text[:resize_start] + segment + text[frame_start:]
 
-    # Persistent render-core resources are created once per VkDevice. Swapchain-dependent
-    # depth/renderpass/framebuffer state is still recreated each time.
     replacements = {
         "        if (g_vkCreateDescriptorSetLayout(g_device, &descriptor_layout, NULL, &g_descriptor_set_layout) != VK_SUCCESS)\n            return false;\n":
         "        if (g_descriptor_set_layout == VK_NULL_HANDLE &&\n            g_vkCreateDescriptorSetLayout(g_device, &descriptor_layout, NULL, &g_descriptor_set_layout) != VK_SUCCESS)\n            return false;\n",
@@ -108,7 +104,6 @@ def harden(root: Path) -> None:
         elif new not in text:
             raise RuntimeError("Vulkan resource lifetime: persistent creation marker changed")
 
-    # Pipeline cache and host buffers must also survive swapchain recreation.
     cache_old = "        if (g_vkCreatePipelineCache(g_device, &pipeline_cache_info, NULL, &g_pipeline_cache) != VK_SUCCESS)\n            return false;\n"
     cache_new = "        if (g_pipeline_cache == VK_NULL_HANDLE &&\n            g_vkCreatePipelineCache(g_device, &pipeline_cache_info, NULL, &g_pipeline_cache) != VK_SUCCESS)\n            return false;\n"
     if cache_old in text:
@@ -118,7 +113,7 @@ def harden(root: Path) -> None:
 
     for size_expr, usage, buffer_name, memory_name in (
         ("64 * 1024", "VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT", "g_uniform_buffer", "g_uniform_memory"),
-        ("64 * 1024 * 1024", "VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT", "g_upload_buffer", "g_upload_memory"),
+        (UPLOAD_CAPACITY_LITERAL, "VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT", "g_upload_buffer", "g_upload_memory"),
     ):
         old = f'''        if (!xr_vk_create_buffer({size_expr}, {usage},\n                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, {buffer_name}, {memory_name}))\n            return false;\n'''
         new = f'''        if ({buffer_name} == VK_NULL_HANDLE &&\n            !xr_vk_create_buffer({size_expr}, {usage},\n                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, {buffer_name}, {memory_name}))\n            return false;\n'''
@@ -138,6 +133,7 @@ def harden(root: Path) -> None:
         "g_pipeline_cache == VK_NULL_HANDLE",
         "g_uniform_buffer == VK_NULL_HANDLE",
         "g_upload_buffer == VK_NULL_HANDLE",
+        f"xr_vk_create_buffer({UPLOAD_CAPACITY_LITERAL}",
     )
     for token in required:
         if token not in final:
@@ -148,6 +144,18 @@ def harden(root: Path) -> None:
         raise RuntimeError("Vulkan resource lifetime validation failed: resize still destroys device-lifetime resources")
     if resize.count("xr_vk_destroy_swapchain_resources();") < 2:
         raise RuntimeError("Vulkan resource lifetime validation failed: resize/recreate do not use partial teardown")
+
+    partial_start = final.index("void xr_vk_destroy_swapchain_resources()")
+    full_start = final.index("void xr_vk_destroy_frame_resources()", partial_start)
+    partial = final[partial_start:full_start]
+    forbidden = (
+        "g_vkDestroyDescriptorPool", "g_vkDestroyDescriptorSetLayout", "g_vkDestroyPipelineLayout",
+        "g_vkDestroyPipelineCache", "g_vkDestroySampler", "g_uniform_buffer", "g_upload_buffer",
+        "g_stream_vertex_buffer", "g_stream_index_buffer",
+    )
+    for token in forbidden:
+        if token in partial:
+            raise RuntimeError(f"Vulkan resource lifetime validation failed: swapchain teardown owns {token}")
 
     print("[vulkan-lifetime] swapchain teardown separated from persistent descriptor/sampler/pipeline/buffer lifetime")
 
