@@ -53,7 +53,9 @@ def main() -> int:
         stage = "vert" if src.suffix.lower() == ".vs" else "frag"
         out = spirv / rel.with_suffix(rel.suffix + ".spv")
         out.parent.mkdir(parents=True, exist_ok=True)
-        cmd = compiler_command(args.compiler, prep, out, prepared, stage)
+        # Prepared stage files keep the original relative path; legacy headers remain
+        # authoritative in the source corpus and are resolved from root.
+        cmd = compiler_command(args.compiler, prep, out, root, stage)
         proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         log = logs / rel.with_suffix(rel.suffix + ".log")
         log.parent.mkdir(parents=True, exist_ok=True)
