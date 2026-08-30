@@ -11,6 +11,7 @@ from enable_vulkan_pipeline import install_pipeline
 from enable_vulkan_renderpass_frame import install_renderpass_frame
 from enable_vulkan_dynamic_state import install_dynamic_state
 from enable_vulkan_draw_commands import install_draw_commands
+from enable_vulkan_geometry_bridge import install_geometry_bridge
 from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
@@ -80,8 +81,9 @@ def harden(root: Path) -> None:
     install_renderpass_frame(root)
     install_dynamic_state(root)
     install_draw_commands(root)
+    install_geometry_bridge(root)
     validate_vulkan_frame_path(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points verified")
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge verified")
 
 
 def main() -> int:
