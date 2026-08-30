@@ -104,6 +104,10 @@ jobs:
           grep -Fq 'xr_vk_allocate_texture_material' "$vk"
           grep -Fq 'xr_vk_restore_signaled_frame_fence' "$vk"
           grep -Fq 'presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR' "$vk"
+          grep -Fq 'bool xr_vk_recreate_swapchain_from_window()' "$vk"
+          grep -Fq 'GetClientRect(g_window_handle, &client)' "$vk"
+          grep -Fq 'presented == VK_ERROR_OUT_OF_DATE_KHR' "$vk"
+          grep -Fq 'presented == VK_SUBOPTIMAL_KHR || acquire == VK_SUBOPTIMAL_KHR' "$vk"
           grep -Fq 'xr_vk_uniform_stream' "$vk"
           grep -Fq 'xr_vk_bootstrap_frame' "$vk"
 
@@ -123,6 +127,19 @@ jobs:
           commit = frame.index('g_image_initialized[image_index] = 1', present)
           if not present < guard < commit:
               raise SystemExit('Unsafe swapchain image state commit order')
+          acquire_ood = frame.index('acquire == VK_ERROR_OUT_OF_DATE_KHR')
+          acquire_recreate = frame.index('xr_vk_recreate_swapchain_from_window()', acquire_ood)
+          present_ood = frame.index('presented == VK_ERROR_OUT_OF_DATE_KHR')
+          present_recreate = frame.index('xr_vk_recreate_swapchain_from_window()', present_ood)
+          if not acquire_ood < acquire_recreate < present_ood < present_recreate:
+              raise SystemExit('Swapchain OUT_OF_DATE recreation path is incomplete')
+          resize_start = text.index('bool xr_vk_bootstrap_resize(unsigned width, unsigned height)')
+          resize_end = text.index('bool xr_vk_recreate_swapchain_from_window()', resize_start)
+          resize = text[resize_start:resize_end]
+          zero_guard = resize.index('if (!width || !height)')
+          destroy = resize.index('xr_vk_destroy_frame_resources()')
+          if not zero_guard < destroy:
+              raise SystemExit('Minimized zero-extent swapchain is destroyed prematurely')
           PY
 
           echo 'Static RC6 Vulkan materialization contract passed.'
