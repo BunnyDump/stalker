@@ -10,6 +10,7 @@ from enable_vulkan_render_core import install_render_core
 from enable_vulkan_pipeline import install_pipeline
 from enable_vulkan_renderpass_frame import install_renderpass_frame
 from enable_vulkan_dynamic_state import install_dynamic_state
+from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -77,7 +78,8 @@ def harden(root: Path) -> None:
     install_pipeline(root)
     install_renderpass_frame(root)
     install_dynamic_state(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic viewport/scissor installed")
+    validate_vulkan_frame_path(root)
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic viewport/scissor verified")
 
 
 def main() -> int:
