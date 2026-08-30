@@ -76,9 +76,11 @@ def install_sgeometry_adapter(root: Path) -> None:
             return false;
 
         const SDeclaration* declaration = geometry->dcl._get();
-        if (declaration->dcl_code.empty())
+        const u32 declaration_count = static_cast<u32>(declaration->dcl_code.size());
+        if (!declaration_count || declaration_count > MAX_FVF_DECL_SIZE)
             return false;
-        if (!xr_vk_build_vertex_input_layout(&declaration->dcl_code[0], geometry->vb_stride, vertex_input))
+        if (!xr_vk_build_vertex_input_layout(&declaration->dcl_code[0], declaration_count,
+            geometry->vb_stride, vertex_input))
             return false;
         return xr_vk_d3d_primitive_to_topology(primitive, topology);
     }
@@ -133,7 +135,9 @@ def install_sgeometry_adapter(root: Path) -> None:
         "primitive_count + 2",
         "xr_vk_build_sgeometry_layout",
         "geometry->dcl._get()",
-        "declaration->dcl_code[0]",
+        "declaration_count = static_cast<u32>(declaration->dcl_code.size())",
+        "declaration_count > MAX_FVF_DECL_SIZE",
+        "&declaration->dcl_code[0], declaration_count",
         "geometry->vb_stride",
         "VkPrimitiveTopology topology",
         "input_assembly.topology = topology",
@@ -142,7 +146,7 @@ def install_sgeometry_adapter(root: Path) -> None:
         if token not in final:
             raise RuntimeError(f"Vulkan SGeometry adapter validation failed: missing {token}")
 
-    print("[vulkan-sgeometry] native SGeometry + primitive topology + D3D index metadata translation installed")
+    print("[vulkan-sgeometry] bounded native SGeometry + primitive topology + D3D index metadata translation installed")
 
 
 def main() -> int:
