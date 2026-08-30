@@ -15,9 +15,11 @@ from enable_vulkan_geometry_bridge import install_geometry_bridge
 from enable_vulkan_sgeometry_adapter import install_sgeometry_adapter
 from enable_vulkan_stream_mirror import install_stream_mirror
 from enable_vulkan_indexed_draw import install_indexed_draw
+from enable_vulkan_material_descriptors import install_material_descriptors
 from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 from validate_vulkan_geometry_bridge import validate as validate_vulkan_geometry_bridge
 from validate_vulkan_indexed_draw import validate as validate_vulkan_indexed_draw
+from validate_vulkan_material_descriptors import validate as validate_vulkan_material_descriptors
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -90,10 +92,12 @@ def harden(root: Path) -> None:
     install_sgeometry_adapter(root)
     install_stream_mirror(root)
     install_indexed_draw(root)
+    install_material_descriptors(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
     validate_vulkan_indexed_draw(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors + indexed draw packets verified")
+    validate_vulkan_material_descriptors(root)
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors + indexed draw packets + material descriptor binding verified")
 
 
 def main() -> int:
