@@ -17,10 +17,30 @@ SHA-256 полного архива:
 
 Полный архив v24 уже включает кумулятивные изменения предыдущих итераций и является источником для итоговой `gamedata`. Delta-патч не должен использоваться вместо полного архива при создании пользовательского релиза.
 
+## Детерминированная подготовка релиза
+
+Релиз необходимо собирать через `tools/stage_rc6_release.py`, а не ручным копированием. Скрипт:
+
+- копирует полный каталог `bin/`;
+- принимает полный каталог `gamedata` либо ZIP с ним;
+- при `--expected-gamedata-sha256 v24` проверяет канонический SHA-256 архива v24;
+- защищает распаковку от выхода ZIP-путей за каталог назначения;
+- формирует `SHA256SUMS.txt` для всех файлов готового релиза;
+- формирует `RC6_RELEASE_INFO.txt` с происхождением gamedata;
+- автоматически запускает `tools/validate_rc6_release.py`.
+
+Пример для канонического пакета v24:
+
+```text
+python tools/stage_rc6_release.py --bin <build-bin> --gamedata gamedata_modernized_fixed_v24.zip --expected-gamedata-sha256 v24 --output STALKER_RC6_RELEASE
+```
+
 Ожидаемая структура:
 
 ```text
 S.T.A.L.K.E.R. RC6/
+├── SHA256SUMS.txt
+├── RC6_RELEASE_INFO.txt
 ├── bin/
 │   ├── XR_3DA.exe
 │   ├── xrCore.dll
