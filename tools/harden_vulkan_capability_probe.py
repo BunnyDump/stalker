@@ -17,11 +17,13 @@ from enable_vulkan_stream_mirror import install_stream_mirror
 from enable_vulkan_indexed_draw import install_indexed_draw
 from enable_vulkan_material_descriptors import install_material_descriptors
 from enable_vulkan_texture_bridge import install_texture_bridge
+from enable_vulkan_uniform_stream import install_uniform_stream
 from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 from validate_vulkan_geometry_bridge import validate as validate_vulkan_geometry_bridge
 from validate_vulkan_indexed_draw import validate as validate_vulkan_indexed_draw
 from validate_vulkan_material_descriptors import validate as validate_vulkan_material_descriptors
 from validate_vulkan_texture_bridge import validate as validate_vulkan_texture_bridge
+from validate_vulkan_uniform_stream import validate as validate_vulkan_uniform_stream
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -96,12 +98,14 @@ def harden(root: Path) -> None:
     install_indexed_draw(root)
     install_material_descriptors(root)
     install_texture_bridge(root)
+    install_uniform_stream(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
     validate_vulkan_indexed_draw(root)
     validate_vulkan_material_descriptors(root)
     validate_vulkan_texture_bridge(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors + indexed draw packets + material descriptor binding + sampled texture bridge verified")
+    validate_vulkan_uniform_stream(root)
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors + indexed draw packets + material descriptor binding + sampled texture bridge + aligned per-frame uniform stream verified")
 
 
 def main() -> int:
