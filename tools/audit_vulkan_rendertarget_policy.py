@@ -14,6 +14,7 @@ ADAPTER_MARKERS = (
     "Renderer-neutral vertex declaration for helper passes.",
     "Renderer-neutral depth/stencil compare vocabulary.",
     "Renderer-neutral clear/sample vocabulary used by render-target policy.",
+    "Legacy procedural texture upload adapter.",
 )
 
 MIGRATED_PATTERNS = {
