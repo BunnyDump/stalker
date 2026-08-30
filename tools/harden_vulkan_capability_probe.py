@@ -5,6 +5,7 @@ from pathlib import Path
 
 from enable_vulkan_device_selection import enable_device_selection
 from enable_vulkan_runtime_stack import install_runtime_stack
+from validate_vulkan_extensions import install_extension_validation
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -67,7 +68,8 @@ def harden(root: Path) -> None:
 
     enable_device_selection(root)
     install_runtime_stack(root)
-    print("[vulkan-capability] lifecycle-safe capability probe chained into the native Vulkan runtime stack")
+    install_extension_validation(root)
+    print("[vulkan-capability] lifecycle-safe probe + native runtime stack + explicit extension validation installed")
 
 
 def main() -> int:
