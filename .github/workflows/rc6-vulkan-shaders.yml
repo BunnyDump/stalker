@@ -1,0 +1,61 @@
+name: RC6 Vulkan R2 Shader Port
+
+on:
+  push:
+    branches: [xray-rc6-vulkan-shader-port]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-vulkan-shaders-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: R2 HLSL to SPIR-V coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout migration tools
+        uses: actions/checkout@v4
+
+      - name: Install SPIR-V compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools
+          glslangValidator --version
+
+      - name: Fetch pinned OpenXRay R2 shader corpus
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/OpenXRay/xray.git upstream-shaders
+          git -C upstream-shaders sparse-checkout init --cone
+          git -C upstream-shaders sparse-checkout set trunk/resources/shaders/r2
+          git -C upstream-shaders checkout d7b23596a70374d8a7ffda0e98852f93ce985182
+          test -d upstream-shaders/trunk/resources/shaders/r2
+          find upstream-shaders/trunk/resources/shaders/r2 -type f \( -name '*.vs' -o -name '*.ps' \) | wc -l
+
+      - name: Compile complete R2 shader corpus
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python tools/compile_r2_spirv.py \
+            upstream-shaders/trunk/resources/shaders/r2 \
+            shader-port-results \
+            --compiler /usr/bin/glslangValidator \
+            --allow-failures
+          cat shader-port-results/spirv_report.json | python -c 'import json,sys; r=json.load(sys.stdin); print("SPIRV_COVERAGE",r["compiled"],r["total"],r["coverage_percent"],"FAILED",r["failed"])'
+
+      - name: Upload shader coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC6_R2_SPIRV_COVERAGE
+          path: shader-port-results
+          if-no-files-found: error
+          retention-days: 14
