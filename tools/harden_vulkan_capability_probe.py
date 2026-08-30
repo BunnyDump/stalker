@@ -12,6 +12,7 @@ from enable_vulkan_resource_upload import install_resource_upload
 from fix_vulkan_resource_declaration_order import fix as fix_resource_declaration_order
 from decouple_vulkan_sun_math import decouple as decouple_vulkan_sun_math
 from fix_vulkan_sun_math_division import fix as fix_sun_math_division
+from decouple_vulkan_r2_capabilities import decouple as decouple_vulkan_r2_capabilities
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -81,7 +82,8 @@ def harden(root: Path) -> None:
     fix_resource_declaration_order(root)
     decouple_vulkan_sun_math(root)
     fix_sun_math_division(root)
-    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources + renderer-neutral sun math installed")
+    decouple_vulkan_r2_capabilities(root)
+    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources + renderer-neutral sun/R2 capability policy installed")
 
 
 def main() -> int:
