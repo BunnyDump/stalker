@@ -19,6 +19,17 @@ def install(root: Path) -> None:
     bool xr_vk_register_backend_pipeline(const xr_vk_backend_pipeline_key& key, VkPipeline pipeline);
     void xr_vk_destroy_pipeline_handle(VkPipeline& pipeline);
 
+    bool xr_vk_validate_spirv_header(const xr_vector<u8>& bytes)
+    {
+        if (bytes.size() < 20 || (bytes.size() & 3))
+            return false;
+        const u32* words = reinterpret_cast<const u32*>(&bytes[0]);
+        const u32 version = words[1];
+        const u32 bound = words[3];
+        return words[0] == 0x07230203u && version >= 0x00010000u && version <= 0x00010600u &&
+            bound > 0 && bound <= 0x01000000u && words[4] == 0;
+    }
+
     bool xr_vk_read_spirv_sidecar(const char* path, xr_vector<u8>& bytes)
     {
         bytes.clear();
@@ -42,14 +53,7 @@ def install(root: Path) -> None:
         DWORD read = 0;
         const BOOL read_ok = ReadFile(file, &bytes[0], static_cast<DWORD>(bytes.size()), &read, NULL);
         CloseHandle(file);
-        if (!read_ok || read != bytes.size())
-        {
-            bytes.clear();
-            return false;
-        }
-
-        const u32* words = reinterpret_cast<const u32*>(&bytes[0]);
-        if (words[0] != 0x07230203u)
+        if (!read_ok || read != bytes.size() || !xr_vk_validate_spirv_header(bytes))
         {
             bytes.clear();
             return false;
@@ -57,14 +61,46 @@ def install(root: Path) -> None:
         return true;
     }
 
-    bool xr_vk_build_shader_sidecar_path(char* path, size_t capacity, const char* stage, u64 identity)
+    bool xr_vk_format_shader_sidecar_path(char* path, size_t capacity, const char* prefix,
+        const char* stage, u64 identity)
     {
-        if (!path || capacity < 64 || !stage || !stage[0] || !identity)
+        if (!path || capacity < 64 || !stage || !identity ||
+            (strcmp(stage, "vs") != 0 && strcmp(stage, "ps") != 0))
             return false;
+        const char* base = prefix ? prefix : "";
         const int written = _snprintf_s(path, capacity, _TRUNCATE,
-            "gamedata\\shaders\\vulkan\\cache\\%s_%016I64x.spv",
-            stage, static_cast<unsigned __int64>(identity));
+            "%sgamedata\\shaders\\vulkan\\cache\\%s_%016I64x.spv",
+            base, stage, static_cast<unsigned __int64>(identity));
         return written > 0 && static_cast<size_t>(written) < capacity;
+    }
+
+    bool xr_vk_read_shader_sidecar(const char* stage, u64 identity, xr_vector<u8>& bytes)
+    {
+        char path[MAX_PATH] = {};
+        if (xr_vk_format_shader_sidecar_path(path, sizeof(path), "", stage, identity) &&
+            xr_vk_read_spirv_sidecar(path, bytes))
+            return true;
+
+        char module_path[MAX_PATH] = {};
+        const DWORD length = GetModuleFileNameA(NULL, module_path, MAX_PATH);
+        if (!length || length >= MAX_PATH)
+            return false;
+        char* slash = strrchr(module_path, '\\');
+        if (!slash)
+            slash = strrchr(module_path, '/');
+        if (!slash)
+            return false;
+        *slash = 0;
+
+        char prefix[MAX_PATH] = {};
+        int written = _snprintf_s(prefix, sizeof(prefix), _TRUNCATE, "%s\\", module_path);
+        if (written > 0 && xr_vk_format_shader_sidecar_path(path, sizeof(path), prefix, stage, identity) &&
+            xr_vk_read_spirv_sidecar(path, bytes))
+            return true;
+
+        written = _snprintf_s(prefix, sizeof(prefix), _TRUNCATE, "%s\\..\\", module_path);
+        return written > 0 && xr_vk_format_shader_sidecar_path(path, sizeof(path), prefix, stage, identity) &&
+            xr_vk_read_spirv_sidecar(path, bytes);
     }
 
     VkPipeline xr_vk_materialize_backend_pipeline(const xr_vk_backend_pipeline_key& key,
@@ -75,16 +111,10 @@ def install(root: Path) -> None:
             key.topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM)
             return VK_NULL_HANDLE;
 
-        char vertex_path[MAX_PATH] = {};
-        char pixel_path[MAX_PATH] = {};
-        if (!xr_vk_build_shader_sidecar_path(vertex_path, sizeof(vertex_path), "vs", key.vertex_shader_identity) ||
-            !xr_vk_build_shader_sidecar_path(pixel_path, sizeof(pixel_path), "ps", key.pixel_shader_identity))
-            return VK_NULL_HANDLE;
-
         xr_vector<u8> vertex_spirv;
         xr_vector<u8> pixel_spirv;
-        if (!xr_vk_read_spirv_sidecar(vertex_path, vertex_spirv) ||
-            !xr_vk_read_spirv_sidecar(pixel_path, pixel_spirv))
+        if (!xr_vk_read_shader_sidecar("vs", key.vertex_shader_identity, vertex_spirv) ||
+            !xr_vk_read_shader_sidecar("ps", key.pixel_shader_identity, pixel_spirv))
             return VK_NULL_HANDLE;
 
         VkPipeline pipeline = xr_vk_create_graphics_pipeline(
@@ -142,11 +172,16 @@ def install(root: Path) -> None:
     required = (
         "bool xr_vk_register_backend_pipeline(const xr_vk_backend_pipeline_key& key, VkPipeline pipeline);",
         "void xr_vk_destroy_pipeline_handle(VkPipeline& pipeline);",
-        "xr_vk_read_spirv_sidecar",
+        "xr_vk_validate_spirv_header",
+        "version >= 0x00010000u && version <= 0x00010600u",
+        "bound > 0 && bound <= 0x01000000u",
+        "words[4] == 0",
         "CreateFileA(path, GENERIC_READ, FILE_SHARE_READ",
         "size.QuadPart <= 16ll * 1024ll * 1024ll",
-        "words[0] != 0x07230203u",
-        "gamedata\\\\shaders\\\\vulkan\\\\cache\\\\%s_%016I64x.spv",
+        "strcmp(stage, \"vs\") != 0 && strcmp(stage, \"ps\") != 0",
+        "GetModuleFileNameA(NULL, module_path, MAX_PATH)",
+        '"%s\\\\..\\\\"',
+        "xr_vk_read_shader_sidecar",
         "xr_vk_materialize_backend_pipeline",
         '"vs", key.vertex_shader_identity',
         '"ps", key.pixel_shader_identity',
@@ -167,11 +202,11 @@ def install(root: Path) -> None:
         if min(lookup, materialize, fallback) < 0 or not lookup < materialize < fallback:
             raise RuntimeError(f"Vulkan SPIR-V sidecar loader validation failed in {label}: fail-closed lookup/materialize order invalid")
 
-    print("[vulkan-spv-sidecar] bytecode-hash keyed VS/PS SPIR-V loading + validated pipeline materialization installed")
+    print("[vulkan-spv-sidecar] cwd/executable-root discovery + strict SPIR-V header validation + bytecode-hash pipeline materialization installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install deterministic SPIR-V sidecar loading for SHOC Vulkan backend pipelines.")
+    parser = argparse.ArgumentParser(description="Install deterministic and path-robust SPIR-V sidecar loading for SHOC Vulkan backend pipelines.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     install(Path(args.root))
