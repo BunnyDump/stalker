@@ -1,0 +1,124 @@
+name: RC6 Vulkan Runtime Test Build
+
+on:
+  push:
+    branches: [xray-rc6-vulkan-runtime-test]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-vulkan-runtime-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64 Vulkan Runtime-Test Build
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout integration repo
+        uses: actions/checkout@v4
+
+      - name: Reconstruct RC6 patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $parts=Get-ChildItem "$env:GITHUB_WORKSPACE\patches\rc6_ci_bin.part*" | Sort-Object Name
+          if($parts.Count -ne 11){throw "Expected 11 RC6 chunks, found $($parts.Count)"}
+          $xz=Join-Path $env:RUNNER_TEMP 'RC6.patch.xz';$s=[IO.File]::Create($xz)
+          try{foreach($part in $parts){$b=[IO.File]::ReadAllBytes($part.FullName);$s.Write($b,0,$b.Length)}}finally{$s.Dispose()}
+          if((Get-FileHash $xz -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482'){throw 'RC6 patch hash mismatch'}
+          $out=Join-Path $env:RUNNER_TEMP 'rc6_patch';New-Item -ItemType Directory -Force $out|Out-Null
+          & "$env:ProgramFiles\7-Zip\7z.exe" e -y "-o$out" $xz|Out-Host
+          if($LASTEXITCODE -ne 0){throw 'Patch unpack failed'}
+          $patch=Get-ChildItem $out -Filter '*.patch'|Select-Object -First 1
+          if(-not $patch){throw 'Patch not found'}
+          "RC6_PATCH=$($patch.FullName)"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Clone pinned upstream
+        shell: pwsh
+        run: |
+          git clone https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
+          git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
+          if($LASTEXITCODE -ne 0){throw 'Pinned upstream checkout failed'}
+
+      - name: Materialize native Vulkan runtime-test stack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_R2" "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK"
+          git -C source apply --check "$env:RC6_PATCH";if($LASTEXITCODE -ne 0){throw 'RC6 patch preflight failed'}
+          git -C source apply "$env:RC6_PATCH";if($LASTEXITCODE -ne 0){throw 'RC6 patch apply failed'}
+          foreach($p in @('patches\rc6-vcpkg-manifest-fix.patch','patches\rc6-vcpkg-baseline-fix.patch')){$f=Join-Path $env:GITHUB_WORKSPACE $p;git -C source apply $f;if($LASTEXITCODE -ne 0){throw "Patch failed: $p"}}
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_item_metadata.py" "$env:GITHUB_WORKSPACE\source"
+          python "$env:GITHUB_WORKSPACE\tools\fix_legacy_stl.py" "$env:GITHUB_WORKSPACE\source"
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_abi.py" "$env:GITHUB_WORKSPACE\source"
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source"
+          python "$env:GITHUB_WORKSPACE\tools\enable_vulkan_engine_loader.py" "$env:GITHUB_WORKSPACE\source"
+          if($LASTEXITCODE -ne 0){throw 'Runtime-test materialization failed'}
+          $api=Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\EngineAPI.cpp'
+          foreach($token in @('xrRender_VK.dll','request_vulkan','LoadLibrary(vk_name)','falling back to R2/R1')){if(-not(Select-String -Path $api -SimpleMatch $token -Quiet)){throw "Engine Vulkan loader missing $token"}}
+          $vk=Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\xrRender_VK\vk_bootstrap.cpp'
+          foreach($token in @('vkCreateDevice','vkCreateSwapchainKHR','vkCreateShaderModule','vkCreateGraphicsPipelines')){if(-not(Select-String -Path $vk -SimpleMatch $token -Quiet)){throw "Vulkan runtime-test missing $token"}}
+          $utf8Bom=[Text.UTF8Encoding]::new($true)
+          Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File|%{$t=[IO.File]::ReadAllText($_.FullName,[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText($_.FullName,$t,$utf8Bom)}
+
+      - name: Restore DirectX SDK cache
+        id: dxsdk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)
+          key: dxsdk-jun2010-v1
+
+      - name: Install DirectX SDK
+        if: steps.dxsdk-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: choco install directx-sdk --yes --no-progress
+
+      - name: Configure dependencies
+        shell: pwsh
+        run: |
+          $dx='C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\';if(-not(Test-Path (Join-Path $dx 'Include\d3d9.h'))){throw 'DXSDK missing'}
+          "DXSDK_DIR=$dx"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $v=$env:VCPKG_INSTALLATION_ROOT;if(-not $v){$v='C:\vcpkg'};"VCPKG_ROOT=$v"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Restore vcpkg archives
+        uses: actions/cache/restore@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: rc6-vcpkg-${{ runner.os }}-x64-${{ hashFiles('patches/rc6-vcpkg-*.patch') }}
+          restore-keys: rc6-vcpkg-${{ runner.os }}-x64-
+
+      - name: Build x64 Vulkan runtime-test
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Continue';$log=Join-Path $PWD 'runtime-test-build.log'
+          & cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' 2>&1|Tee-Object -FilePath $log
+          $exit=$LASTEXITCODE
+          if($exit -ne 0){$m=Select-String $log -Pattern '(?i)fatal error C\d{4}|(?i)\berror C\d{4}\b|(?i)\berror LNK\d{4}\b|(?i)\berror MSB\d{4}\b'|Select-Object -First 1;if($m){Write-Host "FIRST_VULKAN_RUNTIME_TEST_ERROR: $($m.Line)"};exit $exit}
+
+      - name: Stage runtime smoke harness
+        if: success()
+        shell: pwsh
+        run: Copy-Item "$env:GITHUB_WORKSPACE\tools\rc6_vulkan_runtime_smoke.ps1" "$env:GITHUB_WORKSPACE\READY_RC6_X64_VULKAN\RC6_VULKAN_RUNTIME_SMOKE.ps1" -Force
+
+      - name: Upload runtime-test artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: STALKER_SHOC_RC6_X64_VULKAN_RUNTIME_TEST
+          path: READY_RC6_X64_VULKAN
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-vulkan-runtime-test-diagnostics
+          path: source/runtime-test-build.log
+          if-no-files-found: ignore
+          retention-days: 7
