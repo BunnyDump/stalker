@@ -7,6 +7,7 @@ from pathlib import Path
 TECHNIQUE_RE = re.compile(r"^\s*(?:FXVS|FXPS)\s*;?\s*$", re.MULTILINE)
 INCLUDE_RE = re.compile(r'(^\s*#\s*include\s*[<\"])([^>\"]+)([>\"])', re.MULTILINE)
 RESERVED_POINT_RE = re.compile(r"\bpoint\b")
+LOD_COMPAT = """#define tex2Dlod(s,c) tex2D(s,(c).xy)\n#define tex3Dlod(s,c) tex3D(s,(c).xyz)\n#define texCUBElod(s,c) texCUBE(s,(c).xyz)\n"""
 
 
 def decode_legacy_shader(data: bytes) -> str:
@@ -25,10 +26,6 @@ def preprocess_text(text: str) -> str:
         return match.group(1) + match.group(2).replace("\\", "/") + match.group(3)
 
     text = INCLUDE_RE.sub(normalize_include, text)
-    # glslang reserves `point` as a geometry primitive token. Legacy R2 uses
-    # it as an ordinary identifier in several lighting shaders/headers.
-    # R2 stage sources do not use geometry-shader primitive declarations, so
-    # normalizing this identifier across the prepared corpus is semantics-safe.
     text = RESERVED_POINT_RE.sub("xr_point", text)
     return text
 
@@ -36,6 +33,11 @@ def preprocess_text(text: str) -> str:
 def preprocess_file(src: Path, dst: Path) -> None:
     text = decode_legacy_shader(src.read_bytes())
     text = preprocess_text(text)
+    if src.suffix.lower() in {".vs", ".ps"}:
+        # glslang cannot lower several DX9 combined-sampler explicit-LOD
+        # intrinsics. R2 uses these compatibility calls with zero LOD; map them
+        # to the equivalent legacy sample using the spatial coordinate portion.
+        text = LOD_COMPAT + text
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(text, encoding="utf-8")
 
