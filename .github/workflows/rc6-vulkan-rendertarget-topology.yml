@@ -1,20 +1,20 @@
-name: RC6 Vulkan RenderTarget Topology
+name: RC6 Vulkan RenderTarget Compare
 
 on:
   push:
-    branches: [xray-rc6-vulkan-rendertarget-topology-ci]
+    branches: [xray-rc6-vulkan-rendertarget-compare]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: rc6-vulkan-rendertarget-topology-${{ github.ref }}
+  group: rc6-vulkan-rendertarget-compare-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Windows x64 Vulkan RenderTarget Topology
+    name: Windows x64 Vulkan RenderTarget Compare
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
@@ -40,7 +40,7 @@ jobs:
           git clone https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
           git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
           if($LASTEXITCODE -ne 0){throw 'Pinned upstream checkout failed'}
-      - name: Materialize Vulkan topology stack
+      - name: Materialize Vulkan compare stack
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -54,9 +54,9 @@ jobs:
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source"
           if($LASTEXITCODE -ne 0){throw 'Vulkan materialization failed'}
           $rt="$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK\r2_rendertarget.cpp"
-          foreach($token in @('enum XrPrimitiveTopology','XR_PRIMITIVE_TRIANGLE_LIST','xr_primitive_legacy_topology')){if(-not(Select-String -Path $rt -SimpleMatch $token -Quiet)){throw "Topology token missing: $token"}}
-          if(Select-String -Path $rt -Pattern 'RCache\.Render\(D3DPT_' -Quiet){throw 'Direct D3DPT use remains in RCache.Render'}
-          python "$env:GITHUB_WORKSPACE\tools\audit_vulkan_renderer.py" "$env:GITHUB_WORKSPACE\source" --json "$env:GITHUB_WORKSPACE\topology-audit.json" --top 100
+          foreach($token in @('enum XrCompareOp','XR_COMPARE_LESS_EQUAL','xr_compare_legacy')){if(-not(Select-String -Path $rt -SimpleMatch $token -Quiet)){throw "Compare token missing: $token"}}
+          if(Select-String -Path $rt -SimpleMatch 'RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL,' -Quiet){throw 'Direct D3DCMP_LESSEQUAL remains in stencil call'}
+          python "$env:GITHUB_WORKSPACE\tools\audit_vulkan_renderer.py" "$env:GITHUB_WORKSPACE\source" --json "$env:GITHUB_WORKSPACE\compare-audit.json" --top 100
       - name: Restore DirectX SDK cache
         id: dxsdk-cache
         uses: actions/cache/restore@v4
@@ -79,29 +79,29 @@ jobs:
           path: ~\AppData\Local\vcpkg\archives
           key: rc6-vcpkg-${{ runner.os }}-x64-${{ hashFiles('patches/rc6-vcpkg-*.patch') }}
           restore-keys: rc6-vcpkg-${{ runner.os }}-x64-
-      - name: Build x64 Vulkan topology stack
+      - name: Build x64 Vulkan compare stack
         shell: pwsh
         working-directory: source
         run: |
-          $ErrorActionPreference='Continue';$log=Join-Path $PWD 'rendertarget-topology-build.log'
+          $ErrorActionPreference='Continue';$log=Join-Path $PWD 'rendertarget-compare-build.log'
           & cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' 2>&1|Tee-Object -FilePath $log
           $exit=$LASTEXITCODE
-          if($exit -ne 0){$m=Select-String $log -Pattern '(?i)fatal error C\d{4}|(?i)\berror C\d{4}\b|(?i)\berror LNK\d{4}\b|(?i)\berror MSB\d{4}\b'|Select-Object -First 1;if($m){Write-Host "FIRST_VULKAN_TOPOLOGY_ERROR: $($m.Line)"};exit $exit}
+          if($exit -ne 0){$m=Select-String $log -Pattern '(?i)fatal error C\d{4}|(?i)\berror C\d{4}\b|(?i)\berror LNK\d{4}\b|(?i)\berror MSB\d{4}\b'|Select-Object -First 1;if($m){Write-Host "FIRST_VULKAN_COMPARE_ERROR: $($m.Line)"};exit $exit}
       - name: Upload artifact and audit
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: STALKER_SHOC_RC6_X64_VULKAN_RENDERTARGET_TOPOLOGY
+          name: STALKER_SHOC_RC6_X64_VULKAN_RENDERTARGET_COMPARE
           path: |
             READY_RC6_X64_VULKAN
-            topology-audit.json
+            compare-audit.json
           if-no-files-found: error
           compression-level: 9
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-vulkan-rendertarget-topology-diagnostics
-          path: source/rendertarget-topology-build.log
+          name: rc6-vulkan-rendertarget-compare-diagnostics
+          path: source/rendertarget-compare-build.log
           if-no-files-found: ignore
           retention-days: 7
