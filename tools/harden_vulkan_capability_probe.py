@@ -6,6 +6,7 @@ from pathlib import Path
 from enable_vulkan_device_selection import enable_device_selection
 from enable_vulkan_runtime_stack import install_runtime_stack
 from enable_vulkan_render_infra import enable_render_infrastructure
+from enable_vulkan_native_loader import enable_native_loader
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -33,7 +34,8 @@ BOOL xrRender_test_hw()
 
 
 def harden(root: Path) -> None:
-    renderer = root.resolve() / "xr_3da" / "xrRender_VK"
+    root = root.resolve()
+    renderer = root / "xr_3da" / "xrRender_VK"
     header = renderer / "vk_bootstrap.h"
     source = renderer / "vk_bootstrap.cpp"
     test_hw = renderer / "r2_test_hw.cpp"
@@ -69,7 +71,8 @@ def harden(root: Path) -> None:
     enable_device_selection(root)
     install_runtime_stack(root)
     enable_render_infrastructure(root)
-    print("[vulkan-capability] lifecycle-safe probe chained into native Vulkan runtime and render infrastructure")
+    enable_native_loader(root)
+    print("[vulkan-capability] native Vulkan runtime/render infrastructure installed without DXVK bridge or DllMain probing")
 
 
 def main() -> int:
