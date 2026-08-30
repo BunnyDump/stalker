@@ -17,6 +17,7 @@ from enable_vulkan_stream_mirror import install_stream_mirror
 from enable_vulkan_indexed_draw import install_indexed_draw
 from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 from validate_vulkan_geometry_bridge import validate as validate_vulkan_geometry_bridge
+from validate_vulkan_indexed_draw import validate as validate_vulkan_indexed_draw
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -91,6 +92,7 @@ def harden(root: Path) -> None:
     install_indexed_draw(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
+    validate_vulkan_indexed_draw(root)
     print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors + indexed draw packets verified")
 
 
