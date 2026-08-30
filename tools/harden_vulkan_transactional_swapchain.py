@@ -139,8 +139,6 @@ def harden(root: Path) -> None:
     if (g_swapchain == VK_NULL_HANDLE)
         return xr_vk_create_swapchain(width, height);
 
-    // Retain every currently usable swapchain/frame handle until the replacement has
-    // completed all VkSwapchain + views + command/sync + depth/renderpass/framebuffer work.
     if (g_vkDeviceWaitIdle && g_vkDeviceWaitIdle(g_device) != VK_SUCCESS)
         return false;
     xr_vk_collect_deferred_textures();
@@ -148,19 +146,33 @@ def harden(root: Path) -> None:
     const xr_vk_swapchain_state old_state = xr_vk_capture_swapchain_state();
     xr_vk_clear_swapchain_state_without_destroy();
 
+    // Vulkan retires oldSwapchain as soon as vkCreateSwapchainKHR is called with it,
+    // even if creation fails. Therefore old_state is retained only for deterministic
+    // destruction; it must never be restored as the active rendering swapchain.
     if (!xr_vk_create_swapchain(width, height, old_state.swapchain))
     {
-        // Destroy only the partially-created replacement. The old state has not been
-        // destroyed and is restored exactly as it was before the failed attempt.
         xr_vk_destroy_swapchain_resources();
+        xr_vk_clear_swapchain_state_without_destroy();
+
         xr_vk_restore_swapchain_state(old_state);
-        return false;
+        xr_vk_destroy_swapchain_resources();
+        xr_vk_clear_swapchain_state_without_destroy();
+
+        // The retired old swapchain is gone. Make one clean recovery attempt without
+        // oldSwapchain; if this also fails, leave globals in an explicit no-swapchain state.
+        if (!xr_vk_create_swapchain(width, height, VK_NULL_HANDLE))
+        {
+            xr_vk_destroy_swapchain_resources();
+            xr_vk_clear_swapchain_state_without_destroy();
+            return false;
+        }
+        return true;
     }
 
     const xr_vk_swapchain_state new_state = xr_vk_capture_swapchain_state();
 
-    // vkCreateSwapchainKHR succeeded, so oldSwapchain is retired by Vulkan. Release its
-    // dependent objects only now, after the complete replacement state is known-good.
+    // Replacement is complete. Destroy the retired old frame/swapchain state, then
+    // restore the fully-created new state as the sole active state.
     xr_vk_clear_swapchain_state_without_destroy();
     xr_vk_restore_swapchain_state(old_state);
     xr_vk_destroy_swapchain_resources();
@@ -202,9 +214,9 @@ def harden(root: Path) -> None:
         "struct xr_vk_swapchain_state",
         "xr_vk_capture_swapchain_state()",
         "xr_vk_clear_swapchain_state_without_destroy()",
-        "xr_vk_restore_swapchain_state(old_state);",
-        "xr_vk_restore_swapchain_state(new_state);",
         "xr_vk_create_swapchain(width, height, old_state.swapchain)",
+        "xr_vk_create_swapchain(width, height, VK_NULL_HANDLE)",
+        "xr_vk_restore_swapchain_state(new_state);",
         "bool xr_vk_transactional_recreate_swapchain",
     )
     for token in required:
@@ -215,18 +227,29 @@ def harden(root: Path) -> None:
     tx_end = final.index("bool xr_vk_bootstrap_resize", tx_start)
     tx = final[tx_start:tx_end]
     create = tx.index("xr_vk_create_swapchain(width, height, old_state.swapchain)")
-    failure_restore = tx.index("xr_vk_restore_swapchain_state(old_state);", create)
-    new_capture = tx.index("new_state = xr_vk_capture_swapchain_state()", create)
-    old_destroy = tx.index("xr_vk_destroy_swapchain_resources();", new_capture)
-    new_restore = tx.index("xr_vk_restore_swapchain_state(new_state);", old_destroy)
-    if not create < failure_restore < new_capture < old_destroy < new_restore:
-        raise RuntimeError("Transactional swapchain validation failed: unsafe commit/rollback ordering")
+    failure_destroy_partial = tx.index("xr_vk_destroy_swapchain_resources();", create)
+    failure_restore_old = tx.index("xr_vk_restore_swapchain_state(old_state);", failure_destroy_partial)
+    failure_destroy_old = tx.index("xr_vk_destroy_swapchain_resources();", failure_restore_old)
+    recovery = tx.index("xr_vk_create_swapchain(width, height, VK_NULL_HANDLE)", failure_destroy_old)
+    new_capture = tx.index("new_state = xr_vk_capture_swapchain_state()", recovery)
+    success_restore_old = tx.index("xr_vk_restore_swapchain_state(old_state);", new_capture)
+    success_destroy_old = tx.index("xr_vk_destroy_swapchain_resources();", success_restore_old)
+    new_restore = tx.index("xr_vk_restore_swapchain_state(new_state);", success_destroy_old)
+    if not (
+        create < failure_destroy_partial < failure_restore_old < failure_destroy_old < recovery
+        < new_capture < success_restore_old < success_destroy_old < new_restore
+    ):
+        raise RuntimeError("Transactional swapchain validation failed: unsafe retirement/recovery ordering")
 
-    print("[vulkan-swapchain-tx] oldSwapchain handoff + full frame-state rollback/commit installed")
+    failure_branch = tx[create:new_capture]
+    if "xr_vk_restore_swapchain_state(old_state);\n        return false;" in failure_branch:
+        raise RuntimeError("Transactional swapchain validation failed: retired oldSwapchain can become active")
+
+    print("[vulkan-swapchain-tx] oldSwapchain retirement-safe replacement + clean fallback recreation installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Make RC6 Vulkan swapchain recreation transactional and rollback-safe.")
+    parser = argparse.ArgumentParser(description="Make RC6 Vulkan swapchain recreation retirement-safe and recoverable.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
