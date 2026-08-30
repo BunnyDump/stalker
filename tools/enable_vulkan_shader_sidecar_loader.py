@@ -12,7 +12,14 @@ def install(root: Path) -> None:
     text = source.read_text(encoding="utf-8")
 
     helper_marker = "    bool xr_vk_vertex_declaration_identity(IDirect3DVertexDeclaration9* declaration,\n"
-    helpers = r'''    bool xr_vk_read_spirv_sidecar(const char* path, xr_vector<u8>& bytes)
+    helpers = r'''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+        const void* ps_data, size_t ps_size, const char* ps_entry,
+        const xr_vk_vertex_input_layout* vertex_layout,
+        VkPrimitiveTopology topology);
+    bool xr_vk_register_backend_pipeline(const xr_vk_backend_pipeline_key& key, VkPipeline pipeline);
+    void xr_vk_destroy_pipeline_handle(VkPipeline& pipeline);
+
+    bool xr_vk_read_spirv_sidecar(const char* path, xr_vector<u8>& bytes)
     {
         bytes.clear();
         if (!path || !path[0])
@@ -133,6 +140,8 @@ def install(root: Path) -> None:
     final = source.read_text(encoding="utf-8")
 
     required = (
+        "bool xr_vk_register_backend_pipeline(const xr_vk_backend_pipeline_key& key, VkPipeline pipeline);",
+        "void xr_vk_destroy_pipeline_handle(VkPipeline& pipeline);",
         "xr_vk_read_spirv_sidecar",
         "CreateFileA(path, GENERIC_READ, FILE_SHARE_READ",
         "size.QuadPart <= 16ll * 1024ll * 1024ll",
