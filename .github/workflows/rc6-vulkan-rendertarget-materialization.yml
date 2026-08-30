@@ -2,7 +2,7 @@ name: RC6 Vulkan RenderTarget Materialization
 
 on:
   push:
-    branches: [xray-rc6-vulkan-rendertarget-fvf, xray-rc6-vulkan-rendertarget-state]
+    branches: [xray-rc6-vulkan-rendertarget-fvf, xray-rc6-vulkan-rendertarget-state, xray-rc6-vulkan-rendertarget-textures]
   workflow_dispatch:
 
 permissions:
@@ -65,8 +65,27 @@ jobs:
           grep -q 'xr_rt_legacy_format' "$rt"
           grep -q 'xr_primitive_legacy_topology' "$rt"
           grep -q 'xr_rt_legacy_fvf' "$rt"
+          grep -q 'xr_rt_legacy_build_material_lookup' "$rt"
+          grep -q 'xr_rt_legacy_build_jitter_textures' "$rt"
           python tools/audit_vulkan_rendertarget_policy.py source --json rendertarget-policy-audit.json
           python tools/audit_vulkan_renderer.py source --json rendertarget-materialization-audit.json --top 100
+
+      - name: Validate procedural texture policy boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('source/xr_3da/xrRender_VK/r2_rendertarget.cpp')
+          text = p.read_text(encoding='utf-8')
+          start = text.index('\t// Build textures\n')
+          end = text.index('\n\t// PP\n', start)
+          policy = text[start:end]
+          forbidden = ('D3DXCreate', 'D3DLOCKED_', 'D3DPOOL_', 'LockBox', 'LockRect', 'UnlockBox', 'UnlockRect')
+          leaked = [token for token in forbidden if token in policy]
+          if leaked:
+              raise SystemExit(f'procedural texture backend details leaked into policy: {leaked}')
+          PY
 
       - name: Upload audit
         if: always()
