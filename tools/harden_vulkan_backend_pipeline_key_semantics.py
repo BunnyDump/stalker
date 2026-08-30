@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from harden_vulkan_backend_stateblock_identity import harden as harden_vulkan_backend_stateblock_identity
+
 
 def harden(root: Path) -> None:
     source = root.resolve() / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
@@ -97,11 +99,15 @@ def harden(root: Path) -> None:
     if terminator < 0 or fields < 0 or terminator > fields:
         raise RuntimeError("Vulkan backend pipeline key semantics validation failed: terminator is hashed as semantic state")
 
-    print("[vulkan-backend-pipeline-key] semantic D3D9 declaration hashing excludes D3DDECL_END and rejects unterminated declarations")
+    # Isolate cache entries belonging to distinct legacy D3D state objects before
+    # any pipeline can ever become eligible for the live Vulkan draw path.
+    harden_vulkan_backend_stateblock_identity(root)
+
+    print("[vulkan-backend-pipeline-key] semantic declaration hash + D3D9 state-block identity isolation installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Harden Vulkan backend pipeline key semantics for D3D9 vertex declarations.")
+    parser = argparse.ArgumentParser(description="Harden Vulkan backend pipeline key semantics for D3D9 vertex declarations and state-block identity.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
