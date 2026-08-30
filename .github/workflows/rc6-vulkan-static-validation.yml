@@ -1,0 +1,109 @@
+name: RC6 Vulkan Static Validation
+
+on:
+  push:
+    branches: [xray-rc6-vulkan-x64]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-vulkan-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Linux materialization and invariant validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout integration repo
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify RC6 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t parts < <(find patches -maxdepth 1 -type f -name 'rc6_ci_bin.part*' | sort)
+          if [ "${#parts[@]}" -ne 11 ]; then
+            echo "Expected 11 RC6 binary patch chunks, found ${#parts[@]}." >&2
+            exit 1
+          fi
+          cat "${parts[@]}" > "$RUNNER_TEMP/RC6_CI_COMPACT.patch.xz"
+          actual="$(sha256sum "$RUNNER_TEMP/RC6_CI_COMPACT.patch.xz" | awk '{print $1}')"
+          expected='a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482'
+          if [ "$actual" != "$expected" ]; then
+            echo "RC6 patch archive hash mismatch: $actual" >&2
+            exit 1
+          fi
+          xz -dc "$RUNNER_TEMP/RC6_CI_COMPACT.patch.xz" > "$RUNNER_TEMP/RC6_CI_COMPACT.patch"
+          test -s "$RUNNER_TEMP/RC6_CI_COMPACT.patch"
+          echo "RC6_PATCH=$RUNNER_TEMP/RC6_CI_COMPACT.patch" >> "$GITHUB_ENV"
+
+      - name: Clone pinned upstream source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
+          git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
+
+      - name: Materialize current RC6 x64 Vulkan renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a source/xr_3da/xrRender_R2 source/xr_3da/xrRender_VK
+          git -C source apply --check "$RC6_PATCH"
+          git -C source apply "$RC6_PATCH"
+
+          for patch in patches/rc6-vcpkg-manifest-fix.patch patches/rc6-vcpkg-baseline-fix.patch; do
+            git -C source apply --check "$GITHUB_WORKSPACE/$patch"
+            git -C source apply "$GITHUB_WORKSPACE/$patch"
+          done
+
+          python tools/fix_x64_item_metadata.py source
+          python tools/fix_legacy_stl.py source
+          python tools/fix_x64_abi.py source
+          python tools/fix_x64_runtime_compat.py source
+
+      - name: Validate Vulkan frame and resource invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/validate_vulkan_extensions.py source
+          python tools/validate_vulkan_frame_path.py source
+          python tools/validate_vulkan_geometry_bridge.py source
+          python tools/validate_vulkan_stream_mirror.py source
+          python tools/validate_vulkan_indexed_draw.py source
+          python tools/validate_vulkan_material_descriptors.py source
+          python tools/validate_vulkan_texture_bridge.py source
+
+      - name: Verify materialized renderer contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          vk='source/xr_3da/xrRender_VK/vk_bootstrap.cpp'
+          test -s "$vk"
+          grep -Fq 'vkCreateWin32SurfaceKHR' "$vk"
+          grep -Fq 'vkCreateSwapchainKHR' "$vk"
+          grep -Fq 'vkCreateGraphicsPipelines' "$vk"
+          grep -Fq 'vkCmdDrawIndexed' "$vk"
+          grep -Fq 'vkCmdCopyBufferToImage' "$vk"
+          grep -Fq 'xr_vk_max_mip_levels' "$vk"
+          grep -Fq 'xr_vk_mip_extent(texture, mip_level, mip_width, mip_height)' "$vk"
+          grep -Fq 'xr_vk_allocate_texture_material' "$vk"
+          grep -Fq 'xr_vk_bootstrap_frame' "$vk"
+
+          echo 'Static RC6 Vulkan materialization contract passed.'
+
+      - name: Upload materialization diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-vulkan-static-diagnostics
+          path: |
+            source/xr_3da/xrRender_VK/vk_bootstrap.cpp
+            source/xr_3da/xrRender_VK/vk_bootstrap.h
+          if-no-files-found: ignore
+          retention-days: 7
