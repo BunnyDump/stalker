@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+
+def install_sgeometry_adapter(root: Path) -> None:
+    renderer = root.resolve() / "xr_3da" / "xrRender_VK"
+    source = renderer / "vk_bootstrap.cpp"
+    if not source.is_file():
+        raise FileNotFoundError("Vulkan SGeometry adapter requires materialized geometry bridge")
+
+    text = source.read_text(encoding="utf-8")
+
+    include_marker = '#include "vk_bootstrap.h"\n'
+    if '#include "../Shader.h"' not in text:
+        if include_marker not in text:
+            raise RuntimeError("Vulkan SGeometry adapter: bootstrap include marker not found")
+        text = text.replace(include_marker, include_marker + '#include "../Shader.h"\n', 1)
+
+    helper_marker = "    VkShaderModule xr_vk_create_shader_module(const void* data, size_t size)\n"
+    helpers = r'''    bool xr_vk_d3d_primitive_to_topology(D3DPRIMITIVETYPE primitive, VkPrimitiveTopology& topology)
+    {
+        switch (primitive)
+        {
+        case D3DPT_POINTLIST: topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST; return true;
+        case D3DPT_LINELIST: topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST; return true;
+        case D3DPT_LINESTRIP: topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP; return true;
+        case D3DPT_TRIANGLELIST: topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; return true;
+        case D3DPT_TRIANGLESTRIP: topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP; return true;
+        case D3DPT_TRIANGLEFAN: topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN; return true;
+        default: return false;
+        }
+    }
+
+    bool xr_vk_build_sgeometry_layout(const SGeometry* geometry, D3DPRIMITIVETYPE primitive,
+        xr_vk_vertex_input_layout& vertex_input, VkPrimitiveTopology& topology)
+    {
+        if (!geometry || !geometry->dcl._get() || !geometry->vb || !geometry->vb_stride)
+            return false;
+
+        const SDeclaration* declaration = geometry->dcl._get();
+        if (declaration->dcl_code.empty())
+            return false;
+        if (!xr_vk_build_vertex_input_layout(&declaration->dcl_code[0], geometry->vb_stride, vertex_input))
+            return false;
+        return xr_vk_d3d_primitive_to_topology(primitive, topology);
+    }
+
+'''
+    if "xr_vk_build_sgeometry_layout" not in text:
+        if helper_marker not in text:
+            raise RuntimeError("Vulkan SGeometry adapter: shader-module helper marker not found")
+        text = text.replace(helper_marker, helpers + helper_marker, 1)
+
+    signature = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+        const void* ps_data, size_t ps_size, const char* ps_entry,
+        const xr_vk_vertex_input_layout* vertex_layout)
+'''
+    replacement = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+        const void* ps_data, size_t ps_size, const char* ps_entry,
+        const xr_vk_vertex_input_layout* vertex_layout, VkPrimitiveTopology topology)
+'''
+    if "const xr_vk_vertex_input_layout* vertex_layout, VkPrimitiveTopology topology" not in text:
+        if signature not in text:
+            raise RuntimeError("Vulkan SGeometry adapter: graphics-pipeline signature marker not found")
+        text = text.replace(signature, replacement, 1)
+
+    topology_marker = "        input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;\n"
+    topology_replacement = '''        if (topology < VK_PRIMITIVE_TOPOLOGY_POINT_LIST || topology > VK_PRIMITIVE_TOPOLOGY_PATCH_LIST)
+            return VK_NULL_HANDLE;
+        input_assembly.topology = topology;
+'''
+    if "input_assembly.topology = topology;" not in text:
+        if topology_marker not in text:
+            raise RuntimeError("Vulkan SGeometry adapter: hard-coded topology marker not found")
+        text = text.replace(topology_marker, topology_replacement, 1)
+
+    source.write_text(text, encoding="utf-8")
+    final = source.read_text(encoding="utf-8")
+    required = (
+        '#include "../Shader.h"',
+        "xr_vk_d3d_primitive_to_topology",
+        "D3DPT_TRIANGLELIST",
+        "VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST",
+        "D3DPT_TRIANGLESTRIP",
+        "VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP",
+        "D3DPT_TRIANGLEFAN",
+        "VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN",
+        "xr_vk_build_sgeometry_layout",
+        "geometry->dcl._get()",
+        "declaration->dcl_code[0]",
+        "geometry->vb_stride",
+        "VkPrimitiveTopology topology",
+        "input_assembly.topology = topology",
+    )
+    for token in required:
+        if token not in final:
+            raise RuntimeError(f"Vulkan SGeometry adapter validation failed: missing {token}")
+
+    print("[vulkan-sgeometry] native SHOC SGeometry declaration/stride + D3D primitive topology adapter installed")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Adapt native SHOC SGeometry resources into Vulkan vertex-input/topology state.")
+    parser.add_argument("root", nargs="?", default=".")
+    args = parser.parse_args()
+    install_sgeometry_adapter(Path(args.root))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
