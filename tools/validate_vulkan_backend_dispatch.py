@@ -48,16 +48,16 @@ def validate(root: Path) -> None:
             raise RuntimeError(f"backend dispatch validation: renderer does not export {symbol}")
 
     for token in (
-        "u64 xr_vk_hash_shader_bytecode",
-        "1469598103934665603ull",
-        "1099511628211ull",
-        "xr_vk_vertex_shader_bytecode_identity",
-        "xr_vk_pixel_shader_bytecode_identity",
-        "shader->GetFunction(NULL, &size)",
-        "shader->GetFunction(&bytecode[0], &actual_size)",
+        "u64 xr_vk_hash_shader_bytecode", "1469598103934665603ull", "1099511628211ull",
+        "xr_vk_vertex_shader_bytecode_identity", "xr_vk_pixel_shader_bytecode_identity",
+        "shader->GetFunction(NULL, &size)", "shader->GetFunction(&bytecode[0], &actual_size)",
+        "struct xr_vk_backend_pipeline_key", "u64 vertex_declaration_identity;",
+        "declaration->GetDeclaration(NULL, &count)", "xr_vk_make_backend_pipeline_key",
+        "xr_vk_find_backend_pipeline", "xr_vk_register_backend_pipeline", "xr_vk_prune_backend_pipelines",
+        "key.render_pass_generation = g_render_pass_generation;",
     ):
         if token not in vk:
-            raise RuntimeError(f"backend dispatch validation: bytecode identity layer missing {token}")
+            raise RuntimeError(f"backend dispatch validation: shader/pipeline identity layer missing {token}")
 
     indexed_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw_indexed')
     plain_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw(', indexed_start)
@@ -74,16 +74,21 @@ def validate(root: Path) -> None:
             "u64 vertex_shader_identity = 0;", "u64 pixel_shader_identity = 0;",
             "xr_vk_vertex_shader_bytecode_identity(vertex_shader, vertex_shader_identity)",
             "xr_vk_pixel_shader_bytecode_identity(pixel_shader, pixel_shader_identity)",
-            "return FALSE;",
+            "xr_vk_backend_pipeline_key pipeline_key = {};", "xr_vk_vertex_input_layout vertex_layout = {};",
+            "xr_vk_make_backend_pipeline_key(vertex_shader_identity, pixel_shader_identity",
+            "xr_vk_find_backend_pipeline(pipeline_key)", "if (pipeline == VK_NULL_HANDLE)", "return FALSE;",
         ):
             if token not in block:
                 raise RuntimeError(f"backend dispatch validation: {label} export missing {token}")
         runtime_guard = block.find("xr_vk_bootstrap_runtime_ready()")
         active_guard = block.find("xr_vk_bootstrap_active_command_buffer()")
         identity_guard = block.find("xr_vk_vertex_shader_bytecode_identity")
+        key_guard = block.find("xr_vk_make_backend_pipeline_key")
+        lookup_guard = block.find("xr_vk_find_backend_pipeline")
         final_fallback = block.rfind("return FALSE;")
-        if min(runtime_guard, active_guard, identity_guard, final_fallback) < 0 or not runtime_guard < active_guard < identity_guard < final_fallback:
-            raise RuntimeError(f"backend dispatch validation: {label} runtime/active-frame/identity guard order invalid")
+        positions = (runtime_guard, active_guard, identity_guard, key_guard, lookup_guard, final_fallback)
+        if min(positions) < 0 or list(positions) != sorted(positions):
+            raise RuntimeError(f"backend dispatch validation: {label} runtime/frame/identity/pipeline guard order invalid")
 
     stale_calls = (
         "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, baseV",
@@ -100,11 +105,11 @@ def validate(root: Path) -> None:
     if "D3DPT_TRIANGLELIST" in runtime[runtime.find("ICF void CBackend::Render"):runtime.find("ICF void CBackend::set_Shader")]:
         raise RuntimeError("backend dispatch validation: production draw path hard-codes triangle-list topology")
 
-    print("[vulkan-backend-dispatch] handles/names + D3D9 bytecode identities + active R2 command buffer + renderer ABI + fail-closed D3D fallback verified")
+    print("[vulkan-backend-dispatch] handles/names + bytecode identities + generation-keyed pipeline registry + active R2 command buffer + fail-closed D3D fallback verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate live SHOC CBackend to Vulkan renderer dispatch with bytecode-stable shader identity and active frame gating.")
+    parser = argparse.ArgumentParser(description="Validate live SHOC CBackend to Vulkan renderer dispatch with stable shader/pipeline identity and active frame gating.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
