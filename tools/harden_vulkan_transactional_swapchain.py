@@ -52,7 +52,7 @@ def harden(root: Path) -> None:
 
     xr_vk_swapchain_state xr_vk_capture_swapchain_state()
     {
-        xr_vk_swapchain_state state = {};
+        xr_vk_swapchain_state state;
         state.swapchain = g_swapchain;
         state.format = g_swapchain_format;
         state.extent = g_swapchain_extent;
@@ -92,6 +92,8 @@ def harden(root: Path) -> None:
         g_depth_view = VK_NULL_HANDLE;
         g_depth_format = VK_FORMAT_UNDEFINED;
         g_render_pass = VK_NULL_HANDLE;
+        g_requested_width = 0;
+        g_requested_height = 0;
         g_swapchain_images.clear();
         g_swapchain_views.clear();
         g_command_buffers.clear();
