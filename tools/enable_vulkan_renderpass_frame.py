@@ -76,6 +76,13 @@ def install_renderpass_frame(root: Path) -> None:
 '''
         text = text[:start] + replacement + text[end:]
 
+    transfer_wait = "    const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;\n"
+    color_wait = "    const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;\n"
+    if transfer_wait in text:
+        text = text.replace(transfer_wait, color_wait, 1)
+    elif color_wait not in text:
+        raise RuntimeError("Vulkan render-pass frame: submit wait-stage marker not found")
+
     source.write_text(text, encoding="utf-8")
 
     final = source.read_text(encoding="utf-8")
@@ -86,6 +93,7 @@ def install_renderpass_frame(root: Path) -> None:
         "frame_render_pass.framebuffer = g_framebuffers[image_index]",
         "clear_values[1].depthStencil.depth = 1.0f",
         "VK_SUBPASS_CONTENTS_INLINE",
+        "const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;",
     )
     for token in required:
         if token not in final:
@@ -95,12 +103,13 @@ def install_renderpass_frame(root: Path) -> None:
         "VkImageMemoryBarrier to_transfer = {};",
         "g_vkCmdClearColorImage(g_command_buffers[image_index]",
         "VkImageMemoryBarrier to_present = to_transfer;",
+        "const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;",
     )
     for token in legacy:
         if token in final:
             raise RuntimeError(f"Vulkan render-pass frame validation failed: legacy frame path remains: {token}")
 
-    print("[vulkan-frame] swapchain frame now records native render-pass + color/depth clears")
+    print("[vulkan-frame] swapchain frame now records native render-pass + color/depth clears with color-output synchronization")
 
 
 def main() -> int:
