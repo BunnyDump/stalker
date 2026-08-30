@@ -45,9 +45,9 @@ OLD_DECL = r'''static D3DVERTEXELEMENT9 dwDecl[] = {
 			{0, 0, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0}, // pos+uv
 			D3DDECL_END()};'''
 NEW_DECL = r'''static const XrRtVertexElement combine_elements[] = {
-            {0, 4, XR_RT_SEMANTIC_POSITION}};
-        const D3DVERTEXELEMENT9* dwDecl = xr_rt_legacy_vertex_declaration(
-            combine_elements, sizeof(combine_elements) / sizeof(combine_elements[0]));'''
+            {0, 4, XR_RT_SEMANTIC_POSITION}};'''
+OLD_CREATE = "g_combine_VP.create(dwDecl, RCache.Vertex.Buffer(), RCache.QuadIB);"
+NEW_CREATE = "g_combine_VP.create(xr_rt_legacy_vertex_declaration(combine_elements, sizeof(combine_elements) / sizeof(combine_elements[0])), RCache.Vertex.Buffer(), RCache.QuadIB);"
 
 
 def decouple(root: Path) -> None:
@@ -70,6 +70,11 @@ def decouple(root: Path) -> None:
     elif "combine_elements" not in text:
         raise RuntimeError("combine D3D vertex declaration marker not found")
 
+    if OLD_CREATE in text:
+        text = text.replace(OLD_CREATE, NEW_CREATE, 1)
+    elif NEW_CREATE not in text:
+        raise RuntimeError("combine geometry creation marker not found")
+
     path.write_text(text, encoding="utf-8")
     final = path.read_text(encoding="utf-8")
     for token in ("struct XrRtVertexElement", "combine_elements", "xr_rt_legacy_vertex_declaration"):
@@ -78,8 +83,9 @@ def decouple(root: Path) -> None:
 
     adapter_end = final.find("//////////////////////////////////////////////////////////////////////////", final.find("struct XrRtVertexElement") + 1)
     body = final[adapter_end + len("//////////////////////////////////////////////////////////////////////////"):]
-    if "static D3DVERTEXELEMENT9 dwDecl[]" in body or "D3DDECLTYPE_FLOAT4" in body:
-        raise RuntimeError("direct D3D vertex declaration remains in render-target policy")
+    for token in ("static D3DVERTEXELEMENT9 dwDecl[]", "D3DDECLTYPE_FLOAT4", "const D3DVERTEXELEMENT9* dwDecl"):
+        if token in body:
+            raise RuntimeError(f"direct D3D vertex declaration remains in render-target policy: {token}")
     print("[vulkan-rendertarget-declaration] combine vertex declaration centralized behind renderer-neutral layout")
 
 
