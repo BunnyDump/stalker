@@ -18,6 +18,7 @@ from decouple_vulkan_rendertarget_fvf import decouple as decouple_vulkan_rendert
 from decouple_vulkan_rendertarget_declaration import decouple as decouple_vulkan_rendertarget_declaration
 from decouple_vulkan_rendertarget_stencil import decouple as decouple_vulkan_rendertarget_stencil
 from decouple_vulkan_rendertarget_state import decouple as decouple_vulkan_rendertarget_state
+from enable_vulkan_command_recording import install_command_recording
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -93,7 +94,8 @@ def harden(root: Path) -> None:
     decouple_vulkan_rendertarget_declaration(root)
     decouple_vulkan_rendertarget_stencil(root)
     decouple_vulkan_rendertarget_state(root)
-    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources + renderer-neutral sun math + render-target formats/topology/FVF/declaration/stencil/state installed")
+    install_command_recording(root)
+    print("[vulkan-capability] native runtime + SPIR-V pipeline + resources + recordable frame path + renderer-neutral R2 policy installed")
 
 
 def main() -> int:
