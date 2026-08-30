@@ -127,7 +127,7 @@ def harden(root: Path) -> None:
     validate_vulkan_material_descriptors(root)
     validate_vulkan_texture_bridge(root)
     validate_vulkan_uniform_stream(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + indexed draw packets + 8192-set descriptor capacity + persistent material/device resources across resize + transactional oldSwapchain rollback/commit + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + indexed draw packets + 8192-set descriptor capacity + persistent material/device resources across resize + retirement-safe oldSwapchain handoff with clean recovery + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
 
 
 def main() -> int:
