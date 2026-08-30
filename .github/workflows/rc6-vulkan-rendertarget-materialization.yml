@@ -59,13 +59,13 @@ jobs:
           grep -q 'enum XrRtFormat' "$rt"
           grep -q 'enum XrPrimitiveTopology' "$rt"
           grep -q 'enum XrRtVertexLayout' "$rt"
+          grep -q 'struct XrRtVertexElement' "$rt"
+          grep -q 'enum XrCompareFunc' "$rt"
+          grep -q 'enum XrRtClearMask' "$rt"
           grep -q 'xr_rt_legacy_format' "$rt"
           grep -q 'xr_primitive_legacy_topology' "$rt"
           grep -q 'xr_rt_legacy_fvf' "$rt"
-          if grep -E 'RCache\.Render\(D3DPT_' "$rt"; then
-            echo 'Direct D3D primitive topology remains in RCache.Render policy' >&2
-            exit 1
-          fi
+          python tools/audit_vulkan_rendertarget_policy.py source --json rendertarget-policy-audit.json
           python tools/audit_vulkan_renderer.py source --json rendertarget-materialization-audit.json --top 100
 
       - name: Upload audit
@@ -73,6 +73,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rc6-vulkan-rendertarget-materialization-audit
-          path: rendertarget-materialization-audit.json
+          path: |
+            rendertarget-policy-audit.json
+            rendertarget-materialization-audit.json
           if-no-files-found: ignore
           retention-days: 14
