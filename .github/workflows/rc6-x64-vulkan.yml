@@ -93,8 +93,6 @@ jobs:
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source"
           if ($LASTEXITCODE -ne 0) { throw 'RC6 Win64 runtime compatibility migration failed.' }
 
-          # Windows PowerShell 5.1 reads UTF-8 without BOM as the legacy ANSI code page.
-          # RC6 scripts contain Russian diagnostic text, so normalize them explicitly.
           $utf8Bom = [Text.UTF8Encoding]::new($true)
           Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File | ForEach-Object {
             $text = [IO.File]::ReadAllText($_.FullName, [Text.UTF8Encoding]::new($false))
@@ -199,7 +197,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: STALKER_SHOC_RC6_X64_VULKAN
-          path: source/READY_RC6_X64_VULKAN
+          path: READY_RC6_X64_VULKAN
           if-no-files-found: error
           compression-level: 9
 
