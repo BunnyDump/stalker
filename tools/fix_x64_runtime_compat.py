@@ -9,6 +9,9 @@ JIT_GUARD_NEW = b"#if defined(USE_JIT) && !defined(_WIN64)"
 ISPATIAL_EMPTY_OLD = b'''\tBOOL _empty()\n\t{\n\t\treturn items.empty() && (0 == (ptrt(children[0]) | ptrt(children[1]) | ptrt(children[2]) | ptrt(children[3]) |\n\t\t\t\t\t\t\t\t\t   ptrt(children[4]) | ptrt(children[5]) | ptrt(children[6]) | ptrt(children[7])));\n\t}'''
 ISPATIAL_EMPTY_NEW = b'''\tBOOL _empty()\n\t{\n\t\treturn items.empty() && children[0] == 0 && children[1] == 0 && children[2] == 0 && children[3] == 0 &&\n\t\t\tchildren[4] == 0 && children[5] == 0 && children[6] == 0 && children[7] == 0;\n\t}'''
 
+STREAM_TELL_OLD = b'''IC u32 CStreamReader::tell() const\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tVERIFY(u32(m_current_pointer - m_start_pointer) <= m_current_window_size);\n\treturn (m_current_offset_from_start + (m_current_pointer - m_start_pointer));\n}'''
+STREAM_TELL_NEW = b'''IC u32 CStreamReader::tell() const\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tconst size_t window_offset = size_t(m_current_pointer - m_start_pointer);\n\tVERIFY(window_offset <= m_current_window_size);\n\treturn (m_current_offset_from_start + u32(window_offset));\n}'''
+
 
 def native_newlines(data: bytes, replacement: bytes) -> bytes:
     if b"\r\n" in data[:2048]:
@@ -64,6 +67,21 @@ def fix_ispatial_pointer_truncation(root: Path) -> None:
     print("[x64-spatial] ISpatial_NODE::_empty no longer truncates 64-bit child pointers through legacy ptrt casts")
 
 
+def fix_stream_reader_pointer_width(root: Path) -> None:
+    path = root / "xrCore" / "stream_reader_inline.h"
+    if not path.is_file():
+        raise FileNotFoundError(path)
+
+    replace_exact(path, STREAM_TELL_OLD, STREAM_TELL_NEW, "xrCore/stream_reader_inline.h tell pointer width")
+
+    data = path.read_bytes()
+    expected = native_newlines(data, STREAM_TELL_NEW)
+    if data.count(expected) != 1:
+        raise RuntimeError("xrCore/stream_reader_inline.h: pointer-width-safe tell validation failed")
+
+    print("[x64-stream] CStreamReader::tell validates pointer delta at native width before narrowing to u32")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply incremental runtime compatibility fixes for the RC6 Win64 port.")
     parser.add_argument("root", nargs="?", default=".")
@@ -72,6 +90,7 @@ def main() -> int:
     root = Path(args.root).resolve()
     disable_unavailable_x64_lua_jit(root)
     fix_ispatial_pointer_truncation(root)
+    fix_stream_reader_pointer_width(root)
     return 0
 
 
