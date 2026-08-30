@@ -25,6 +25,10 @@ def package(compile_dir: Path, gamedata_root: Path) -> dict:
     if report.get("failed", 1) != 0 or report.get("compiled") != report.get("total"):
         raise RuntimeError("SPIR-V package requires a strict zero-failure compilation report")
 
+    binding_contract = report.get("binding_contract")
+    if not binding_contract or binding_contract.get("ubo_binding") != 0 or binding_contract.get("sampled_binding_last") != 8:
+        raise RuntimeError("SPIR-V package requires the normalized R2 descriptor binding contract")
+
     destination = gamedata_root.resolve() / "shaders" / "r2_vk"
     if destination.exists():
         shutil.rmtree(destination)
@@ -49,15 +53,17 @@ def package(compile_dir: Path, gamedata_root: Path) -> dict:
             "entrypoint": row["entrypoint"],
             "variant": variant,
             "defines": row.get("defines", []),
+            "bindings": row.get("bindings", []),
             "path": relative.as_posix(),
             "bytes": target.stat().st_size,
             "sha256": sha256(target),
         })
 
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "format": "xray-r2-vulkan-spirv",
         "target_env": "vulkan1.0",
+        "binding_contract": binding_contract,
         "source_corpus_files": report.get("corpus_files"),
         "entrypoint_files": report.get("entrypoint_files"),
         "shader_variants": len(entries),
@@ -66,7 +72,7 @@ def package(compile_dir: Path, gamedata_root: Path) -> dict:
     }
     manifest_path = destination / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"[vulkan-shader-package] packaged {len(entries)} SPIR-V variants -> {destination}")
+    print(f"[vulkan-shader-package] packaged {len(entries)} normalized SPIR-V variants -> {destination}")
     return manifest
 
 
