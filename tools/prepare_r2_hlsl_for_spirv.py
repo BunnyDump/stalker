@@ -8,6 +8,15 @@ TECHNIQUE_RE = re.compile(r"^\s*(?:FXVS|FXPS)\s*;?\s*$", re.MULTILINE)
 INCLUDE_RE = re.compile(r'(^\s*#\s*include\s*[<\"])([^>\"]+)([>\"])', re.MULTILINE)
 
 
+def decode_legacy_shader(data: bytes) -> str:
+    for encoding in ("utf-8-sig", "cp1251"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            pass
+    return data.decode("latin-1")
+
+
 def preprocess_text(text: str) -> str:
     # X-Ray's legacy .vs/.ps files may terminate in FXVS/FXPS macros which expand
     # to D3D9 effect techniques. Vulkan consumes only the HLSL entry point.
@@ -23,7 +32,7 @@ def preprocess_text(text: str) -> str:
 
 
 def preprocess_file(src: Path, dst: Path) -> None:
-    text = src.read_text(encoding="utf-8-sig", errors="strict")
+    text = decode_legacy_shader(src.read_bytes())
     text = preprocess_text(text)
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(text, encoding="utf-8")
