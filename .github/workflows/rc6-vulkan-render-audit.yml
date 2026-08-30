@@ -40,10 +40,8 @@ jobs:
           git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
           Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_R2" "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK"
           git -C source apply "$env:RC6_PATCH"
-          $manifest=Join-Path $env:GITHUB_WORKSPACE 'patches\rc6-vcpkg-manifest-fix.patch'
-          $baseline=Join-Path $env:GITHUB_WORKSPACE 'patches\rc6-vcpkg-baseline-fix.patch'
-          git -C source apply $manifest
-          git -C source apply $baseline
+          git -C source apply "$env:GITHUB_WORKSPACE\patches\rc6-vcpkg-manifest-fix.patch"
+          git -C source apply "$env:GITHUB_WORKSPACE\patches\rc6-vcpkg-baseline-fix.patch"
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_item_metadata.py" "$env:GITHUB_WORKSPACE\source"
           python "$env:GITHUB_WORKSPACE\tools\fix_legacy_stl.py" "$env:GITHUB_WORKSPACE\source"
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_abi.py" "$env:GITHUB_WORKSPACE\source"
@@ -52,7 +50,7 @@ jobs:
       - name: Audit Vulkan/D3D coupling
         shell: pwsh
         run: |
-          python "$env:GITHUB_WORKSPACE\tools\audit_vulkan_renderer.py" "$env:GITHUB_WORKSPACE\source" --json "$env:GITHUB_WORKSPACE\vulkan-render-audit.json" --top 60
+          python "$env:GITHUB_WORKSPACE\tools\audit_vulkan_renderer.py" "$env:GITHUB_WORKSPACE\source" --json "$env:GITHUB_WORKSPACE\vulkan-render-audit.json" --top 100
           if ($LASTEXITCODE -ne 0) { throw 'Vulkan audit failed.' }
           Get-Content "$env:GITHUB_WORKSPACE\vulkan-render-audit.json" | Out-Host
       - name: Upload audit
@@ -61,3 +59,10 @@ jobs:
           name: rc6-vulkan-render-audit
           path: vulkan-render-audit.json
           if-no-files-found: error
+      - name: Upload materialized renderer source
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-xrRender-VK-materialized-source
+          path: source/xr_3da/xrRender_VK
+          if-no-files-found: error
+          retention-days: 7
