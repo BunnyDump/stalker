@@ -4,6 +4,12 @@ on:
   push:
     branches: [xray-rc6-vulkan-x64]
   workflow_dispatch:
+    inputs:
+      require_complete_release:
+        description: Fail packaging unless full validated gamedata is present
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -192,11 +198,53 @@ jobs:
           path: ~\AppData\Local\vcpkg\archives
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
-      - name: Upload x64 runtime
+      - name: Stage gamedata and classify RC6 package
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ready = Join-Path $env:GITHUB_WORKSPACE 'READY_RC6_X64_VULKAN'
+          if (-not (Test-Path $ready)) { throw "RC6 staging directory is missing: $ready" }
+
+          python "$env:GITHUB_WORKSPACE\tools\stage_rc6_release_gamedata.py" "$env:GITHUB_WORKSPACE\source" $ready
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to stage cumulative gamedata into RC6 package.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\validate_rc6_release.py" $ready
+          $validationExit = $LASTEXITCODE
+          $status = Join-Path $ready 'RC6_RELEASE_STATUS.txt'
+
+          if ($validationExit -eq 0) {
+            @(
+              'complete=true'
+              'artifact=STALKER_SHOC_RC6_X64_VULKAN_RELEASE'
+              'validation=passed'
+            ) | Set-Content -Path $status -Encoding UTF8
+            'RC6_RELEASE_COMPLETE=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'RC6_ARTIFACT_NAME=STALKER_SHOC_RC6_X64_VULKAN_RELEASE' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host 'RC6 package is complete: x64 engine + Vulkan renderer + validated gamedata.'
+          } else {
+            @(
+              'complete=false'
+              'artifact=STALKER_SHOC_RC6_X64_VULKAN_ENGINE'
+              'validation=missing-or-incomplete-gamedata'
+              'required_gamedata=gamedata_modernized_fixed_v24.zip'
+              'required_gamedata_sha256=ce0bc0845f888c6cf879e56e4ccfc0d37008e0d641ca1b1f9c560dc944e08f27'
+            ) | Set-Content -Path $status -Encoding UTF8
+            'RC6_RELEASE_COMPLETE=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'RC6_ARTIFACT_NAME=STALKER_SHOC_RC6_X64_VULKAN_ENGINE' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Warning 'Engine build succeeded, but this package is not a complete release because validated gamedata is missing or incomplete.'
+
+            $requireComplete = '${{ inputs.require_complete_release }}'
+            if ($requireComplete -eq 'true') {
+              throw 'Complete RC6 release was explicitly required, but gamedata validation failed.'
+            }
+          }
+
+      - name: Upload classified x64 runtime
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: STALKER_SHOC_RC6_X64_VULKAN
+          name: ${{ env.RC6_ARTIFACT_NAME }}
           path: READY_RC6_X64_VULKAN
           if-no-files-found: error
           compression-level: 9
