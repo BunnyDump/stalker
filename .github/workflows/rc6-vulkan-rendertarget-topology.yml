@@ -60,6 +60,10 @@ jobs:
           $rt="$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK\r2_rendertarget.cpp"
           foreach($token in @('enum XrRtFormat','enum XrPrimitiveTopology','xr_primitive_legacy_topology')){if(-not(Select-String -Path $rt -SimpleMatch $token -Quiet)){throw "Render-target topology token missing: $token"}}
           if(Select-String -Path $rt -Pattern 'RCache\.Render\s*\(\s*D3DPT_' -Quiet){throw 'Direct D3DPT topology remains in RCache.Render calls'}
+          $remaining=(Select-String -Path $rt -Pattern 'D3DPT_' -AllMatches | ForEach-Object {$_.Matches.Count} | Measure-Object -Sum).Sum
+          if($null -eq $remaining){$remaining=0}
+          "remaining_d3dpt_tokens=$remaining" | Set-Content "$env:GITHUB_WORKSPACE\rendertarget-topology-metric.txt"
+          Write-Host "REMAINING_RENDERTARGET_D3DPT_TOKENS=$remaining"
           python "$env:GITHUB_WORKSPACE\tools\audit_vulkan_renderer.py" "$env:GITHUB_WORKSPACE\source" --json "$env:GITHUB_WORKSPACE\rendertarget-topology-audit.json" --top 100
 
       - name: Restore DirectX SDK cache
@@ -108,6 +112,7 @@ jobs:
           path: |
             READY_RC6_X64_VULKAN
             rendertarget-topology-audit.json
+            rendertarget-topology-metric.txt
           if-no-files-found: error
           compression-level: 9
 
