@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 
@@ -9,70 +10,75 @@ def install(root: Path) -> None:
     if not path.is_file():
         raise FileNotFoundError(path)
 
-    text = path.read_text(encoding="utf-8")
-    if 'LPCSTR vk_name = "xrRender_VK.dll";' in text:
-        return
+    text = path.read_text(encoding="utf-8-sig")
+    newline = "\r\n" if "\r\n" in text else "\n"
+    if 'LPCSTR vk_name = "xrRender_VK.dll";' not in text:
+        name_pattern = r'(\tLPCSTR r1_name = "xrRender_R1\.dll";\r?\n\tLPCSTR r2_name = "xrRender_R2\.dll";\r?\n)'
+        text, count = re.subn(name_pattern, r'\1\tLPCSTR vk_name = "xrRender_VK.dll";' + newline, text, count=1)
+        if count != 1:
+            raise RuntimeError("Vulkan engine loader DLL-name marker not found")
 
-    name_marker = '\tLPCSTR r1_name = "xrRender_R1.dll";\n\tLPCSTR r2_name = "xrRender_R2.dll";\n'
-    name_block = name_marker + '\tLPCSTR vk_name = "xrRender_VK.dll";\n'
-    if name_marker not in text:
-        raise RuntimeError("Vulkan engine loader name marker not found")
-    text = text.replace(name_marker, name_block, 1)
+    start = text.find("#ifndef DEDICATED_SERVER", text.find('LPCSTR vk_name = "xrRender_VK.dll";'))
+    end = text.find("#endif", start)
+    if start < 0 or end < 0:
+        raise RuntimeError("Vulkan engine loader render-selection block not found")
+    end += len("#endif")
+    old_block = text[start:end]
+    if "r2_name" not in old_block or "hRender" not in old_block:
+        raise RuntimeError("Vulkan engine loader found an unexpected render-selection block")
+    if "force_native_d3d9_fallback" not in text:
+        raise RuntimeError("RC6 native D3D9 fallback state is missing")
 
-    old_block = '''#ifndef DEDICATED_SERVER
-\tif (psDeviceFlags.test(rsR2))
-\t{
-\t\t// try to initialize R2
-\t\tLog("Loading DLL:", r2_name);
-\t\thRender = LoadLibrary(r2_name);
-\t\tif (0 == hRender)
-\t\t{
-\t\t\t// try to load R1
-\t\t\tMsg("...Failed - incompatible hardware.");
-\t\t}
-\t}
-#endif
-'''
-    new_block = '''#ifndef DEDICATED_SERVER
-\tconst bool request_vulkan = strstr(Core.Params, "-vulkan") != 0 || strstr(Core.Params, "-renderer_vk") != 0;
-\tif (request_vulkan)
-\t{
-\t\tLog("Loading DLL:", vk_name);
-\t\thRender = LoadLibrary(vk_name);
-\t\tif (0 == hRender)
-\t\t\tMsg("...Vulkan renderer unavailable, falling back to R2/R1.");
-\t\telse
-\t\t{
-\t\t\tpsDeviceFlags.set(rsR2, TRUE);
-\t\t\trenderer_value = 1;
-\t\t}
-\t}
-\n\tif (0 == hRender && psDeviceFlags.test(rsR2))
-\t{
-\t\t// transitional R2 fallback while native Vulkan migration remains in progress
-\t\tLog("Loading DLL:", r2_name);
-\t\thRender = LoadLibrary(r2_name);
-\t\tif (0 == hRender)
-\t\t\tMsg("...Failed - incompatible hardware.");
-\t}
-#endif
-'''
-    if old_block not in text:
-        raise RuntimeError("Vulkan engine loader render-selection marker not found")
-    text = text.replace(old_block, new_block, 1)
+    new_block = (
+        "#ifndef DEDICATED_SERVER" + newline +
+        '\tconst bool request_vulkan = g_vulkan_backend || strstr(Core.Params, "-vulkan") != 0 || strstr(Core.Params, "-renderer_vk") != 0;' + newline +
+        "\tif (request_vulkan)" + newline +
+        "\t{" + newline +
+        '\t\tLog("Loading DLL:", vk_name);' + newline +
+        "\t\thRender = LoadLibraryA(vk_name);" + newline +
+        "\t\tif (0 == hRender)" + newline +
+        "\t\t{" + newline +
+        '\t\t\tMsg("! Native Vulkan renderer unavailable, falling back to native Direct3D 9 R2.");' + newline +
+        "\t\t\tg_vulkan_backend = FALSE;" + newline +
+        "\t\t\trenderer_value = 2;" + newline +
+        "\t\t\tforce_native_d3d9_fallback = true;" + newline +
+        "\t\t}" + newline +
+        "\t\telse" + newline +
+        "\t\t{" + newline +
+        "\t\t\tg_vulkan_backend = TRUE;" + newline +
+        "\t\t\tpsDeviceFlags.set(rsR2, TRUE);" + newline +
+        "\t\t\trenderer_value = 1;" + newline +
+        "\t\t}" + newline +
+        "\t}" + newline + newline +
+        "\tif (0 == hRender && psDeviceFlags.test(rsR2))" + newline +
+        "\t{" + newline +
+        '\t\tLog("Loading DLL:", r2_name);' + newline +
+        "\t\thRender = force_native_d3d9_fallback ? xr_load_renderer_with_native_d3d9(r2_name) : LoadLibraryA(r2_name);" + newline +
+        "\t\tif (0 == hRender)" + newline +
+        '\t\t\tMsg("...Failed - incompatible hardware.");' + newline +
+        "\t}" + newline +
+        "#endif"
+    )
+    text = text[:start] + new_block + text[end:]
     path.write_text(text, encoding="utf-8")
 
     final = path.read_text(encoding="utf-8")
-    for token in ('xrRender_VK.dll', 'request_vulkan', '-renderer_vk', 'falling back to R2/R1'):
+    init_start = final.find("void CEngineAPI::Initialize(void)")
+    init_end = final.find("// game", init_start)
+    for token in ('xrRender_VK.dll', 'request_vulkan', 'LoadLibraryA(vk_name)', '-renderer_vk', 'force_native_d3d9_fallback'):
         if token not in final:
             raise RuntimeError(f"Vulkan engine loader validation missing {token}")
-    if final.find('LoadLibrary(vk_name)') > final.find('LoadLibrary(r2_name)'):
-        raise RuntimeError("Vulkan renderer is not attempted before R2 fallback")
-    print("[vulkan-engine-loader] explicit -vulkan/-renderer_vk path installed before R2/R1 fallback")
+    vk_load = final.find("LoadLibraryA(vk_name)", init_start)
+    r2_load = final.find("r2_name", vk_load + 1)
+    if vk_load < 0 or r2_load < 0 or vk_load > r2_load:
+        raise RuntimeError("Native Vulkan renderer is not attempted before R2 fallback")
+    if "xr_vulkan_bridge_available()" in final[init_start:init_end]:
+        raise RuntimeError("Legacy DXVK bridge selection remains active in EngineAPI::Initialize")
+    print("[vulkan-engine-loader] native xrRender_VK selection replaces temporary DXVK bridge path")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Install explicit native Vulkan renderer selection in X-Ray EngineAPI.")
+    ap = argparse.ArgumentParser(description="Install native Vulkan renderer selection in X-Ray EngineAPI.")
     ap.add_argument("root", nargs="?", default=".")
     args = ap.parse_args()
     install(Path(args.root))
