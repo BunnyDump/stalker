@@ -28,6 +28,25 @@ jobs:
           set -euo pipefail
           python tools/test_release_staging_policy.py
 
+      - name: Validate pinned OpenAL overlay policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          port='tools/vcpkg-overlay/ports/openal-soft/portfile.cmake'
+          triplet='tools/vcpkg-overlay/triplets/xray-openal-static-crt.cmake'
+          test -s "$port"
+          test -s "$triplet"
+          grep -Fq 'REF 1.25.1' "$port"
+          grep -Fq -- '-DFORCE_STATIC_VCRT=ON' "$port"
+          grep -Fq -- '-DLIBTYPE=SHARED' "$port"
+          grep -Fq 'set(VCPKG_CRT_LINKAGE static)' "$triplet"
+          grep -Fq 'set(VCPKG_LIBRARY_LINKAGE dynamic)' "$triplet"
+          grep -Fq "e8a82dfad0c4a0dab656f350aa33dc8cef3e92ee" patches/rc6-vcpkg-baseline-fix.patch
+          if grep -Fq '"fmt"' tools/vcpkg-overlay/ports/openal-soft/vcpkg.json; then
+            echo 'RC6 OpenAL overlay must use bundled fmt, not a dynamic vcpkg fmt dependency.' >&2
+            exit 1
+          fi
+
       - name: Reconstruct and verify RC6 patch
         shell: bash
         run: |
@@ -81,6 +100,7 @@ jobs:
           python tools/validate_vulkan_frame_path.py source
           python tools/validate_vulkan_geometry_bridge.py source
           python tools/validate_vulkan_stream_mirror.py source
+          python tools/validate_vulkan_stream_lifetime.py source
           python tools/validate_vulkan_indexed_draw.py source
           python tools/validate_vulkan_material_descriptors.py source
           python tools/validate_vulkan_texture_bridge.py source
@@ -113,6 +133,8 @@ jobs:
           grep -Fq 'presented == VK_SUBOPTIMAL_KHR || acquire == VK_SUBOPTIMAL_KHR' "$vk"
           grep -Fq 'xr_vk_uniform_stream' "$vk"
           grep -Fq 'xr_vk_bootstrap_frame' "$vk"
+          grep -Fq 'g_frame_submission_pending' "$vk"
+          grep -Fq '64 * 1024 * 1024' "$vk"
 
           python - <<'PY'
           from pathlib import Path
