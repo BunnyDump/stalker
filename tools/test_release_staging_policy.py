@@ -36,8 +36,17 @@ def main() -> int:
         vcpkg_bin = root / "xray-rc6-vcpkg" / "installed-openal" / "x64-windows" / "bin"
         vcpkg_bin.mkdir(parents=True)
         write_fake_pe(vcpkg_bin / "fmt.dll")
+
+        vc_redist = root / "vc-redist"
+        vc_crt = vc_redist / "x64" / "Microsoft.VC143.CRT"
+        vc_crt.mkdir(parents=True)
+        write_fake_pe(vc_crt / "MSVCP140.dll")
+        write_fake_pe(vc_crt / "VCRUNTIME140.dll")
+
         old_temp = os.environ.get("TEMP")
+        old_redist = os.environ.get("VCToolsRedistDir")
         os.environ["TEMP"] = str(root)
+        os.environ["VCToolsRedistDir"] = str(vc_redist)
         try:
             stage(workspace, source, ready)
         finally:
@@ -45,14 +54,20 @@ def main() -> int:
                 os.environ.pop("TEMP", None)
             else:
                 os.environ["TEMP"] = old_temp
+            if old_redist is None:
+                os.environ.pop("VCToolsRedistDir", None)
+            else:
+                os.environ["VCToolsRedistDir"] = old_redist
 
         assert (ready / "bin" / "fmt.dll").is_file(), "fmt.dll runtime closure was not staged"
+        assert (ready / "bin" / "MSVCP140.dll").is_file(), "MSVCP140.dll VC runtime was not staged"
+        assert (ready / "bin" / "VCRUNTIME140.dll").is_file(), "VCRUNTIME140.dll VC runtime was not staged"
         assert (ready / "gamedata" / "config" / "changed.ltx").is_file()
         assert not (ready / "gamedata" / "textures" / "MUST_NOT_SHIP.dds").exists()
         declared = parse_overlay_manifest(ready / "GAMEDATA_OVERLAY_MANIFEST.txt")
         assert declared == {"config/changed.ltx"}, declared
 
-    print("[release-policy-test] sparse gamedata and OpenAL/fmt runtime closure verified")
+    print("[release-policy-test] sparse gamedata + OpenAL/fmt + VC runtime staging verified")
     return 0
 
 
