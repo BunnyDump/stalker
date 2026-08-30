@@ -18,6 +18,7 @@ def install_indexed_draw(root: Path) -> None:
         VkDeviceSize vertex_offset;
         VkDeviceSize index_offset;
         VkIndexType index_type;
+        D3DPRIMITIVETYPE primitive_type;
         u32 first_index;
         u32 index_count;
         s32 vertex_offset_bias;
@@ -30,6 +31,10 @@ def install_indexed_draw(root: Path) -> None:
             return false;
         if (draw.index_type != VK_INDEX_TYPE_UINT16 && draw.index_type != VK_INDEX_TYPE_UINT32)
             return false;
+
+        VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+        if (!xr_vk_d3d_primitive_to_topology(draw.primitive_type, topology))
+            return false;
         if (!xr_vk_bind_stream_geometry(command_buffer, draw.vertex_offset, draw.index_offset, draw.index_type))
             return false;
 
@@ -39,15 +44,17 @@ def install_indexed_draw(root: Path) -> None:
     }
 
     bool xr_vk_make_indexed_draw_packet(VkPipeline pipeline, D3DFORMAT index_format,
-        u32 start_index, u32 primitive_count, s32 base_vertex, VkDeviceSize vertex_offset,
-        VkDeviceSize index_stream_offset, xr_vk_indexed_draw_packet& draw)
+        D3DPRIMITIVETYPE primitive_type, u32 start_index, u32 primitive_count, s32 base_vertex,
+        VkDeviceSize vertex_offset, VkDeviceSize index_stream_offset, xr_vk_indexed_draw_packet& draw)
     {
         VkIndexType index_type = VK_INDEX_TYPE_MAX_ENUM;
         u32 index_stride = 0;
         u32 index_count = 0;
+        VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
         if (pipeline == VK_NULL_HANDLE ||
             !xr_vk_d3d_index_format_to_type(index_format, index_type, index_stride) ||
-            !xr_vk_primitive_element_count(D3DPT_TRIANGLELIST, primitive_count, index_count) ||
+            !xr_vk_d3d_primitive_to_topology(primitive_type, topology) ||
+            !xr_vk_primitive_element_count(primitive_type, primitive_count, index_count) ||
             !index_count)
             return false;
 
@@ -60,6 +67,7 @@ def install_indexed_draw(root: Path) -> None:
         draw.vertex_offset = vertex_offset;
         draw.index_offset = absolute_index_offset;
         draw.index_type = index_type;
+        draw.primitive_type = primitive_type;
         draw.first_index = 0;
         draw.index_count = index_count;
         draw.vertex_offset_bias = base_vertex;
@@ -82,25 +90,36 @@ def install_indexed_draw(root: Path) -> None:
         "VkDeviceSize vertex_offset",
         "VkDeviceSize index_offset",
         "VkIndexType index_type",
+        "D3DPRIMITIVETYPE primitive_type",
         "u32 index_count",
         "bool xr_vk_record_indexed_draw",
+        "xr_vk_d3d_primitive_to_topology(draw.primitive_type, topology)",
         "xr_vk_bind_stream_geometry(command_buffer",
         "g_vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.pipeline)",
         "g_vkCmdDrawIndexed(command_buffer, draw.index_count, 1, draw.first_index, draw.vertex_offset_bias, 0)",
         "bool xr_vk_make_indexed_draw_packet",
+        "D3DPRIMITIVETYPE primitive_type, u32 start_index",
         "xr_vk_d3d_index_format_to_type",
-        "xr_vk_primitive_element_count(D3DPT_TRIANGLELIST",
+        "xr_vk_d3d_primitive_to_topology(primitive_type, topology)",
+        "xr_vk_primitive_element_count(primitive_type, primitive_count, index_count)",
+        "draw.primitive_type = primitive_type",
         "static_cast<VkDeviceSize>(start_index) * index_stride",
+    )
+    forbidden = (
+        "xr_vk_primitive_element_count(D3DPT_TRIANGLELIST, primitive_count, index_count)",
     )
     for token in required:
         if token not in final:
             raise RuntimeError(f"Vulkan indexed draw validation failed: missing {token}")
+    for token in forbidden:
+        if token in final:
+            raise RuntimeError(f"Vulkan indexed draw validation failed: stale hard-coded primitive topology: {token}")
 
-    print("[vulkan-indexed-draw] validated D3D9 indexed draw packet + Vulkan bind/draw recording installed")
+    print("[vulkan-indexed-draw] native D3D primitive topology + indexed Vulkan draw packet recording installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install safe indexed Vulkan draw recording over mirrored SHOC geometry streams.")
+    parser = argparse.ArgumentParser(description="Install topology-correct indexed Vulkan draw recording over mirrored SHOC geometry streams.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     install_indexed_draw(Path(args.root))
