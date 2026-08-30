@@ -41,6 +41,14 @@ def validate(root: Path) -> None:
         "D3DPT_TRIANGLELIST",
         "D3DPT_TRIANGLESTRIP",
         "D3DPT_TRIANGLEFAN",
+        "bool xr_vk_d3d_index_format_to_type",
+        "D3DFMT_INDEX16",
+        "VK_INDEX_TYPE_UINT16",
+        "D3DFMT_INDEX32",
+        "VK_INDEX_TYPE_UINT32",
+        "bool xr_vk_primitive_element_count",
+        "element_count = primitive_count * 3",
+        "element_count = primitive_count + 2",
         "bool xr_vk_build_sgeometry_layout",
         "geometry->dcl._get()",
         "declaration->dcl_code.empty()",
@@ -63,21 +71,24 @@ def validate(root: Path) -> None:
             raise RuntimeError(f"Vulkan geometry bridge validation failed: stale fixed state {token}")
 
     build_pos = text.find("bool xr_vk_build_vertex_input_layout")
+    topology_pos = text.find("bool xr_vk_d3d_primitive_to_topology")
+    index_pos = text.find("bool xr_vk_d3d_index_format_to_type")
+    count_pos = text.find("bool xr_vk_primitive_element_count")
     sgeometry_pos = text.find("bool xr_vk_build_sgeometry_layout")
     pipeline_pos = text.find("VkPipeline xr_vk_create_graphics_pipeline")
     vertex_state_pos = text.find("vertex_input.vertexBindingDescriptionCount", pipeline_pos)
     topology_state_pos = text.find("input_assembly.topology = topology", pipeline_pos)
     graphics_info_pos = text.find("VkGraphicsPipelineCreateInfo info", pipeline_pos)
-    if min(build_pos, sgeometry_pos, pipeline_pos, vertex_state_pos, topology_state_pos, graphics_info_pos) < 0:
+    if min(build_pos, topology_pos, index_pos, count_pos, sgeometry_pos, pipeline_pos, vertex_state_pos, topology_state_pos, graphics_info_pos) < 0:
         raise RuntimeError("Vulkan geometry bridge validation failed: expected sections not found")
-    if not (build_pos < sgeometry_pos < pipeline_pos < vertex_state_pos < topology_state_pos < graphics_info_pos):
+    if not (build_pos < topology_pos < index_pos < count_pos < sgeometry_pos < pipeline_pos < vertex_state_pos < topology_state_pos < graphics_info_pos):
         raise RuntimeError("Vulkan geometry bridge validation failed: materialized section order is inconsistent")
 
-    print("[vulkan-geometry-check] D3D9 declaration + native SGeometry + primitive topology pipeline wiring verified")
+    print("[vulkan-geometry-check] D3D9 declaration + SGeometry + topology + indexed draw metadata wiring verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the materialized SHOC D3D9/SGeometry -> Vulkan pipeline bridge.")
+    parser = argparse.ArgumentParser(description="Validate the materialized SHOC D3D9/SGeometry -> Vulkan draw bridge.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
