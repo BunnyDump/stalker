@@ -5,7 +5,7 @@ from pathlib import Path
 
 MATH_BLOCK = r'''
 //////////////////////////////////////////////////////////////////////////
-// Renderer-neutral sun/shadow math. This replaces the legacy D3DX helper
+// Renderer-neutral sun/shadow math. This replaces the legacy helper
 // dependency while preserving the original row-vector matrix convention.
 struct XrSunVec2
 {
@@ -216,11 +216,11 @@ def decouple(root: Path) -> None:
     for token in ("XrSunMatrix", "xr_sun_matrix_inverse", "xr_sun_vec3_transform_coord_array"):
         if token not in final:
             raise RuntimeError(f"sun math validation missing {token}")
-    print("[vulkan-sun-math] r2_R_sun.cpp no longer depends on D3DX math")
+    print("[vulkan-sun-math] r2_R_sun.cpp now uses renderer-neutral shadow math")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Replace r2_R_sun D3DX math with renderer-neutral math.")
+    ap = argparse.ArgumentParser(description="Replace legacy sun helper math with renderer-neutral math.")
     ap.add_argument("root", nargs="?", default=".")
     args = ap.parse_args()
     decouple(Path(args.root))
