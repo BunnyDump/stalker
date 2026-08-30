@@ -15,6 +15,7 @@ ADAPTER_MARKERS = (
     "Renderer-neutral depth/stencil compare vocabulary.",
     "Renderer-neutral clear/sample vocabulary used by render-target policy.",
     "Legacy procedural texture upload adapter.",
+    "Legacy render-surface lifetime adapter.",
 )
 
 MIGRATED_PATTERNS = {
