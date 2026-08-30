@@ -20,6 +20,7 @@ from enable_vulkan_texture_bridge import install_texture_bridge
 from harden_vulkan_texture_copy import harden as harden_vulkan_texture_copy
 from harden_vulkan_frame_fence import harden as harden_vulkan_frame_fence
 from harden_vulkan_present_state import harden as harden_vulkan_present_state
+from harden_vulkan_swapchain_recreation import harden as harden_vulkan_swapchain_recreation
 from enable_vulkan_uniform_stream import install_uniform_stream
 from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 from validate_vulkan_geometry_bridge import validate as validate_vulkan_geometry_bridge
@@ -104,6 +105,7 @@ def harden(root: Path) -> None:
     harden_vulkan_texture_copy(root)
     harden_vulkan_frame_fence(root)
     harden_vulkan_present_state(root)
+    harden_vulkan_swapchain_recreation(root)
     install_uniform_stream(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
@@ -111,7 +113,7 @@ def harden(root: Path) -> None:
     validate_vulkan_material_descriptors(root)
     validate_vulkan_texture_bridge(root)
     validate_vulkan_uniform_stream(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors + indexed draw packets + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + safe present state + aligned per-frame uniform stream verified")
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors + indexed draw packets + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
 
 
 def main() -> int:
