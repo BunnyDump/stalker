@@ -8,9 +8,6 @@ import struct
 import sys
 from pathlib import Path
 
-# DLLs supplied by supported Windows itself. VC runtime DLLs are intentionally
-# excluded: a portable RC6 package must carry the exact redistributable runtime
-# it was built against instead of assuming it is installed globally.
 WINDOWS_SYSTEM_DLLS = {
     "advapi32.dll", "avifil32.dll", "avrt.dll", "bcrypt.dll", "bcryptprimitives.dll",
     "cabinet.dll", "cfgmgr32.dll", "combase.dll", "comctl32.dll", "comdlg32.dll",
@@ -25,6 +22,9 @@ WINDOWS_SYSTEM_DLLS = {
     "wldap32.dll", "ws2_32.dll", "wsock32.dll", "wtsapi32.dll",
 }
 SYSTEM_PREFIXES = ("api-ms-win-", "ext-ms-win-")
+OPENAL_FORBIDDEN_PRIVATE_IMPORT_PREFIXES = (
+    "fmt", "msvcp", "vcruntime", "concrt", "vcomp",
+)
 
 
 class PEFormatError(ValueError):
@@ -56,14 +56,13 @@ def pe_imports(path: Path) -> list[str]:
     optional_size = _u16(data, coff + 16)
     optional = coff + 20
     magic = _u16(data, optional)
-    if magic == 0x20B:  # PE32+
+    if magic == 0x20B:
         data_directory = optional + 112
-    elif magic == 0x10B:  # PE32
+    elif magic == 0x10B:
         data_directory = optional + 96
     else:
         raise PEFormatError(f"unsupported optional header 0x{magic:04X}")
 
-    # IMAGE_DIRECTORY_ENTRY_IMPORT = 1.
     import_rva = _u32(data, data_directory + 8)
     if import_rva == 0:
         return []
@@ -86,7 +85,6 @@ def pe_imports(path: Path) -> list[str]:
                 offset = raw_pointer + (rva - virtual_address)
                 if offset < len(data):
                     return offset
-        # Header RVAs are legal too.
         if rva < sections_offset and rva < len(data):
             return rva
         raise PEFormatError(f"RVA 0x{rva:X} is not mapped")
@@ -99,8 +97,7 @@ def pe_imports(path: Path) -> list[str]:
         fields = struct.unpack_from("<IIIII", data, descriptor)
         if fields == (0, 0, 0, 0, 0):
             break
-        name_rva = fields[3]
-        name_offset = rva_to_offset(name_rva)
+        name_offset = rva_to_offset(fields[3])
         terminator = data.find(b"\0", name_offset, min(len(data), name_offset + 512))
         if terminator < 0:
             raise PEFormatError("unterminated import DLL name")
@@ -135,6 +132,17 @@ def validate_bin(bin_dir: Path) -> list[str]:
         except (OSError, PEFormatError) as exc:
             errors.append(f"cannot parse PE imports for {path.name}: {exc}")
             continue
+
+        if path.name.lower() == "openal32.dll":
+            forbidden = sorted(
+                dependency for dependency in imports
+                if dependency.lower().startswith(OPENAL_FORBIDDEN_PRIVATE_IMPORT_PREFIXES)
+            )
+            if forbidden:
+                errors.append(
+                    "OpenAL32.dll is not self-contained; unexpected dynamic CRT/fmt imports: "
+                    + ", ".join(forbidden)
+                )
 
         for dependency in imports:
             lowered = dependency.lower()
