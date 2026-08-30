@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from enable_vulkan_device_selection import enable_device_selection
+from enable_vulkan_runtime_stack import install_runtime_stack
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -65,7 +66,8 @@ def harden(root: Path) -> None:
         raise RuntimeError("Vulkan probe hardening validation failed: hardware probe owns runtime shutdown")
 
     enable_device_selection(root)
-    print("[vulkan-capability] hardware probe is lifecycle-safe; physical-device and graphics queue selection chained")
+    install_runtime_stack(root)
+    print("[vulkan-capability] lifecycle-safe capability probe chained into the native Vulkan runtime stack")
 
 
 def main() -> int:
