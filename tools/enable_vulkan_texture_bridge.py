@@ -56,6 +56,31 @@ def install_texture_bridge(root: Path) -> None:
         }
     };
 
+    u32 xr_vk_max_mip_levels(u32 width, u32 height)
+    {
+        u32 extent = width > height ? width : height;
+        u32 levels = 0;
+        while (extent)
+        {
+            ++levels;
+            extent >>= 1;
+        }
+        return levels;
+    }
+
+    void xr_vk_mip_extent(const xr_vk_texture_resource& texture, u32 mip_level, u32& width, u32& height)
+    {
+        width = texture.width;
+        height = texture.height;
+        for (u32 level = 0; level < mip_level; ++level)
+        {
+            if (width > 1)
+                width >>= 1;
+            if (height > 1)
+                height >>= 1;
+        }
+    }
+
     VkFormat xr_vk_d3d_texture_format(D3DFORMAT format)
     {
         switch (format)
@@ -104,7 +129,8 @@ def install_texture_bridge(root: Path) -> None:
     bool xr_vk_create_texture_2d(u32 width, u32 height, u32 mip_levels, D3DFORMAT d3d_format,
         xr_vk_texture_resource& texture)
     {
-        if (!width || !height || !mip_levels || g_device == VK_NULL_HANDLE)
+        if (!width || !height || !mip_levels || mip_levels > xr_vk_max_mip_levels(width, height) ||
+            g_device == VK_NULL_HANDLE)
             return false;
 
         const VkFormat format = xr_vk_d3d_texture_format(d3d_format);
@@ -220,9 +246,15 @@ def install_texture_bridge(root: Path) -> None:
     {
         if (command_buffer == VK_NULL_HANDLE || staging_buffer == VK_NULL_HANDLE ||
             texture.image == VK_NULL_HANDLE || mip_level >= texture.mip_levels || !width || !height ||
-            width > texture.width || height > texture.height || !g_vkCmdCopyBufferToImage)
+            !g_vkCmdCopyBufferToImage)
             return false;
         if (texture.layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+            return false;
+
+        u32 mip_width = 0;
+        u32 mip_height = 0;
+        xr_vk_mip_extent(texture, mip_level, mip_width, mip_height);
+        if (width > mip_width || height > mip_height)
             return false;
 
         VkBufferImageCopy copy = {};
@@ -263,6 +295,8 @@ def install_texture_bridge(root: Path) -> None:
         "PFN_vkCmdCopyBufferToImage",
         "XR_VK_LOAD_DEVICE(vkCmdCopyBufferToImage)",
         "struct xr_vk_texture_resource",
+        "xr_vk_max_mip_levels",
+        "xr_vk_mip_extent",
         "xr_vk_d3d_texture_format",
         "D3DFMT_A8R8G8B8", "VK_FORMAT_B8G8R8A8_UNORM",
         "D3DFMT_DXT1", "VK_FORMAT_BC1_RGBA_UNORM_BLOCK",
@@ -270,11 +304,14 @@ def install_texture_bridge(root: Path) -> None:
         "xr_vk_texture_format_supported",
         "VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT",
         "xr_vk_create_texture_2d",
+        "mip_levels > xr_vk_max_mip_levels(width, height)",
         "VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT",
         "xr_vk_transition_texture",
         "VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL",
         "VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL",
         "xr_vk_copy_buffer_to_texture",
+        "xr_vk_mip_extent(texture, mip_level, mip_width, mip_height)",
+        "width > mip_width || height > mip_height",
         "g_vkCmdCopyBufferToImage",
         "xr_vk_allocate_texture_material",
         "g_default_sampler",
@@ -283,7 +320,7 @@ def install_texture_bridge(root: Path) -> None:
         if token not in final:
             raise RuntimeError(f"Vulkan texture bridge validation failed: missing {token}")
 
-    print("[vulkan-textures] D3D9 texture formats + sampled image lifetime + upload transitions + material binding installed")
+    print("[vulkan-textures] D3D9 texture formats + bounded mip chain/extents + sampled image lifetime + upload transitions + material binding installed")
 
 
 def main() -> int:
