@@ -22,6 +22,12 @@ jobs:
       - name: Checkout integration repo
         uses: actions/checkout@v4
 
+      - name: Test sparse release staging policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/test_release_staging_policy.py
+
       - name: Reconstruct and verify RC6 patch
         shell: bash
         run: |
