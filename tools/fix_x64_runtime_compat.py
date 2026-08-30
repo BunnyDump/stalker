@@ -6,6 +6,9 @@ from pathlib import Path
 JIT_GUARD_OLD = b"#ifdef USE_JIT"
 JIT_GUARD_NEW = b"#if defined(USE_JIT) && !defined(_WIN64)"
 
+ISPATIAL_EMPTY_OLD = b'''\tBOOL _empty()\n\t{\n\t\treturn items.empty() && (0 == (ptrt(children[0]) | ptrt(children[1]) | ptrt(children[2]) | ptrt(children[3]) |\n\t\t\t\t\t\t\t\t\t   ptrt(children[4]) | ptrt(children[5]) | ptrt(children[6]) | ptrt(children[7])));\n\t}'''
+ISPATIAL_EMPTY_NEW = b'''\tBOOL _empty()\n\t{\n\t\treturn items.empty() && children[0] == 0 && children[1] == 0 && children[2] == 0 && children[3] == 0 &&\n\t\t\tchildren[4] == 0 && children[5] == 0 && children[6] == 0 && children[7] == 0;\n\t}'''
+
 
 def native_newlines(data: bytes, replacement: bytes) -> bytes:
     if b"\r\n" in data[:2048]:
@@ -46,6 +49,21 @@ def disable_unavailable_x64_lua_jit(root: Path) -> None:
     print("[x64-lua] Lua JIT initialization disabled on Win64 in xrGame and xrSE_Factory; Win32 JIT behavior preserved")
 
 
+def fix_ispatial_pointer_truncation(root: Path) -> None:
+    path = root / "xr_3da" / "ISpatial.h"
+    if not path.is_file():
+        raise FileNotFoundError(path)
+
+    replace_exact(path, ISPATIAL_EMPTY_OLD, ISPATIAL_EMPTY_NEW, "xr_3da/ISpatial.h _empty pointer truncation")
+
+    data = path.read_bytes()
+    expected = native_newlines(data, ISPATIAL_EMPTY_NEW)
+    if data.count(expected) != 1:
+        raise RuntimeError("xr_3da/ISpatial.h: pointer-safe _empty validation failed")
+
+    print("[x64-spatial] ISpatial_NODE::_empty no longer truncates 64-bit child pointers through legacy ptrt casts")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply incremental runtime compatibility fixes for the RC6 Win64 port.")
     parser.add_argument("root", nargs="?", default=".")
@@ -53,6 +71,7 @@ def main() -> int:
 
     root = Path(args.root).resolve()
     disable_unavailable_x64_lua_jit(root)
+    fix_ispatial_pointer_truncation(root)
     return 0
 
 
