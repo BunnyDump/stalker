@@ -9,10 +9,11 @@ from pathlib import Path
 from prepare_r2_hlsl_for_spirv import preprocess_tree
 
 ENTRYPOINT_RE = re.compile(r"\b(main(?:_[A-Za-z0-9_]+)?)\s*\(")
+SKIN_MACROS = ("SKIN_NONE", "SKIN_0", "SKIN_1", "SKIN_2")
 
 
-def compiler_command(compiler: Path, src: Path, out: Path, include_dir: Path, stage: str, entrypoint: str) -> list[str]:
-    return [
+def compiler_command(compiler: Path, src: Path, out: Path, include_dir: Path, stage: str, entrypoint: str, defines: tuple[str, ...]) -> list[str]:
+    cmd = [
         str(compiler),
         "-D",
         "-V",
@@ -22,9 +23,10 @@ def compiler_command(compiler: Path, src: Path, out: Path, include_dir: Path, st
         "-e", entrypoint,
         "-S", stage,
         f"-I{include_dir}",
-        "-o", str(out),
-        str(src),
     ]
+    cmd.extend(f"-D{name}=1" for name in defines)
+    cmd.extend(["-o", str(out), str(src)])
+    return cmd
 
 
 def detect_entrypoint(path: Path) -> str | None:
@@ -35,6 +37,14 @@ def detect_entrypoint(path: Path) -> str | None:
     if "main" in matches:
         return "main"
     return matches[0]
+
+
+def detect_variants(path: Path) -> list[tuple[str, tuple[str, ...]]]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    skins = [macro for macro in SKIN_MACROS if re.search(rf"\b{macro}\b", text)]
+    if skins:
+        return [(macro.lower(), (macro,)) for macro in skins]
+    return [("default", tuple())]
 
 
 def main() -> int:
@@ -62,6 +72,7 @@ def main() -> int:
     results = []
     helpers = []
     failures = []
+    entrypoint_files = 0
     for src in shaders:
         rel = src.relative_to(root)
         prep = prepared / rel
@@ -70,31 +81,36 @@ def main() -> int:
         if entrypoint is None:
             helpers.append({"shader": rel.as_posix(), "stage": stage, "classification": "helper/no-entrypoint"})
             continue
+        entrypoint_files += 1
 
-        out = spirv / rel.with_suffix(rel.suffix + ".spv")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        cmd = compiler_command(args.compiler, prep, out, prepared, stage, entrypoint)
-        proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        log = logs / rel.with_suffix(rel.suffix + ".log")
-        log.parent.mkdir(parents=True, exist_ok=True)
-        log.write_text(proc.stdout, encoding="utf-8", errors="replace")
-        row = {
-            "shader": rel.as_posix(),
-            "stage": stage,
-            "entrypoint": entrypoint,
-            "success": proc.returncode == 0 and out.is_file() and out.stat().st_size >= 20,
-            "spirv_bytes": out.stat().st_size if out.is_file() else 0,
-            "log": log.relative_to(work).as_posix(),
-        }
-        results.append(row)
-        if not row["success"]:
-            failures.append(row)
+        for variant_name, defines in detect_variants(prep):
+            out = spirv / rel.with_suffix(rel.suffix + f".{variant_name}.spv")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            cmd = compiler_command(args.compiler, prep, out, prepared, stage, entrypoint, defines)
+            proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            log = logs / rel.with_suffix(rel.suffix + f".{variant_name}.log")
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(proc.stdout, encoding="utf-8", errors="replace")
+            row = {
+                "shader": rel.as_posix(),
+                "stage": stage,
+                "entrypoint": entrypoint,
+                "variant": variant_name,
+                "defines": list(defines),
+                "success": proc.returncode == 0 and out.is_file() and out.stat().st_size >= 20,
+                "spirv_bytes": out.stat().st_size if out.is_file() else 0,
+                "log": log.relative_to(work).as_posix(),
+            }
+            results.append(row)
+            if not row["success"]:
+                failures.append(row)
 
     total = len(results)
     compiled = total - len(failures)
     report = {
         "shader_root": str(root),
         "corpus_files": len(shaders),
+        "entrypoint_files": entrypoint_files,
         "helper_files": len(helpers),
         "helpers": helpers,
         "total": total,
@@ -104,10 +120,10 @@ def main() -> int:
         "results": results,
     }
     (work / "spirv_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"R2 SPIR-V entrypoint coverage: {compiled}/{total} ({report['coverage_percent']}%); helpers={len(helpers)} corpus={len(shaders)}")
+    print(f"R2 SPIR-V variant coverage: {compiled}/{total} ({report['coverage_percent']}%); entrypoint_files={entrypoint_files} helpers={len(helpers)} corpus={len(shaders)}")
     if failures:
         first = failures[0]
-        print(f"FIRST_R2_SPIRV_FAILURE: {first['shader']} [{first['entrypoint']}] -> {first['log']}")
+        print(f"FIRST_R2_SPIRV_FAILURE: {first['shader']} [{first['entrypoint']}:{first['variant']}] -> {first['log']}")
         first_log = work / first["log"]
         if first_log.is_file():
             print(first_log.read_text(encoding="utf-8", errors="replace")[:6000])
