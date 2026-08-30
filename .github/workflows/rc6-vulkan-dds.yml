@@ -18,62 +18,116 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-        name: Checkout integration repo
+      - name: Checkout integration repo
+        uses: actions/checkout@v4
+
       - name: Reconstruct RC6 patch
         shell: pwsh
         run: |
-          $ErrorActionPreference='Stop';$parts=Get-ChildItem "$env:GITHUB_WORKSPACE\patches\rc6_ci_bin.part*"|Sort-Object Name
-          if($parts.Count-ne 11){throw "Expected 11 patch chunks"};$xz=Join-Path $env:RUNNER_TEMP 'RC6.patch.xz';$s=[IO.File]::Create($xz)
-          try{foreach($p in $parts){$b=[IO.File]::ReadAllBytes($p.FullName);$s.Write($b,0,$b.Length)}}finally{$s.Dispose()}
-          if((Get-FileHash $xz -Algorithm SHA256).Hash.ToLowerInvariant()-ne'a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482'){throw 'Patch hash mismatch'}
-          $o=Join-Path $env:RUNNER_TEMP 'rc6_patch';New-Item -Type Directory -Force $o|Out-Null;& "$env:ProgramFiles\7-Zip\7z.exe" e -y "-o$o" $xz|Out-Host
-          $p=Get-ChildItem $o -Filter '*.patch'|Select-Object -First 1;"RC6_PATCH=$($p.FullName)"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem "$env:GITHUB_WORKSPACE\patches\rc6_ci_bin.part*" | Sort-Object Name
+          if ($parts.Count -ne 11) { throw "Expected 11 RC6 binary patch chunks, found $($parts.Count)." }
+          $xz = Join-Path $env:RUNNER_TEMP 'RC6_CI_COMPACT.patch.xz'
+          $stream = [IO.File]::Create($xz)
+          try {
+            foreach ($part in $parts) {
+              $bytes = [IO.File]::ReadAllBytes($part.FullName)
+              $stream.Write($bytes, 0, $bytes.Length)
+            }
+          } finally { $stream.Dispose() }
+          $actual = (Get-FileHash $xz -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne 'a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482') { throw "RC6 patch archive hash mismatch: $actual" }
+          $out = Join-Path $env:RUNNER_TEMP 'rc6_patch'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          & "$env:ProgramFiles\7-Zip\7z.exe" e -y "-o$out" $xz | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to unpack RC6 patch.' }
+          $patch = Get-ChildItem $out -Filter '*.patch' | Select-Object -First 1
+          if (-not $patch) { throw 'Unpacked RC6 patch not found.' }
+          "RC6_PATCH=$($patch.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Clone pinned upstream
         shell: pwsh
         run: |
           git clone https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
           git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to checkout pinned upstream revision.' }
+
       - name: Materialize native Vulkan DDS stack
         shell: pwsh
         run: |
-          $ErrorActionPreference='Stop';Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_R2" "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK"
-          git -C source apply "$env:RC6_PATCH";if($LASTEXITCODE-ne 0){throw 'RC6 patch failed'}
-          foreach($p in @('patches\rc6-vcpkg-manifest-fix.patch','patches\rc6-vcpkg-baseline-fix.patch')){git -C source apply (Join-Path $env:GITHUB_WORKSPACE $p);if($LASTEXITCODE-ne 0){throw "Patch failed $p"}}
+          $ErrorActionPreference = 'Stop'
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_R2" "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK"
+          git -C source apply --check "$env:RC6_PATCH"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 patch preflight failed.' }
+          git -C source apply "$env:RC6_PATCH"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 patch application failed.' }
+          foreach ($p in @('patches\rc6-vcpkg-manifest-fix.patch','patches\rc6-vcpkg-baseline-fix.patch')) {
+            $f = Join-Path $env:GITHUB_WORKSPACE $p
+            git -C source apply --check $f
+            if ($LASTEXITCODE -ne 0) { throw "Patch preflight failed: $p" }
+            git -C source apply $f
+            if ($LASTEXITCODE -ne 0) { throw "Patch application failed: $p" }
+          }
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_item_metadata.py" "$env:GITHUB_WORKSPACE\source"
           python "$env:GITHUB_WORKSPACE\tools\fix_legacy_stl.py" "$env:GITHUB_WORKSPACE\source"
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_abi.py" "$env:GITHUB_WORKSPACE\source"
-          python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source";if($LASTEXITCODE-ne 0){throw 'DDS materialization failed'}
-          $vk="$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK\vk_bootstrap.cpp";$proj="$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK\xrRender_VK.vcxproj"
-          foreach($t in @('xr_vk_texture_create_dds','VK_FORMAT_BC1_RGBA_UNORM_BLOCK','VK_FORMAT_BC2_UNORM_BLOCK','VK_FORMAT_BC3_UNORM_BLOCK','VkBufferImageCopy')){if(-not(Select-String $vk -SimpleMatch $t -Quiet)){throw "Missing $t"}}
-          if(-not(Select-String $proj -SimpleMatch 'XRRENDER_VULKAN' -Quiet)){throw 'XRRENDER_VULKAN missing'}
-          $utf8Bom=[Text.UTF8Encoding]::new($true);Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File|%{$t=[IO.File]::ReadAllText($_.FullName,[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText($_.FullName,$t,$utf8Bom)}
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'DDS materialization failed.' }
+          $vk = Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\xrRender_VK\vk_bootstrap.cpp'
+          $proj = Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\xrRender_VK\xrRender_VK.vcxproj'
+          foreach ($token in @('xr_vk_texture_create_dds','VK_FORMAT_BC1_RGBA_UNORM_BLOCK','VK_FORMAT_BC2_UNORM_BLOCK','VK_FORMAT_BC3_UNORM_BLOCK','VkBufferImageCopy')) {
+            if (-not (Select-String -Path $vk -SimpleMatch $token -Quiet)) { throw "Materialized Vulkan DDS path missing $token" }
+          }
+          if (-not (Select-String -Path $proj -SimpleMatch 'XRRENDER_VULKAN' -Quiet)) { throw 'XRRENDER_VULKAN missing from Vulkan project.' }
+          $utf8Bom = [Text.UTF8Encoding]::new($true)
+          Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File | ForEach-Object {
+            $text = [IO.File]::ReadAllText($_.FullName, [Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText($_.FullName, $text, $utf8Bom)
+          }
+
       - name: Restore DirectX SDK cache
         id: dxsdk-cache
         uses: actions/cache/restore@v4
         with:
           path: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)
           key: dxsdk-jun2010-v1
+
       - name: Install DirectX SDK
         if: steps.dxsdk-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: choco install directx-sdk --yes --no-progress
+
       - name: Configure dependencies
         shell: pwsh
         run: |
-          $dx='C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\';"DXSDK_DIR=$dx"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append;$v=$env:VCPKG_INSTALLATION_ROOT;if(-not $v){$v='C:\vcpkg'};"VCPKG_ROOT=$v"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $dx = 'C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\'
+          if (-not (Test-Path (Join-Path $dx 'Include\d3d9.h'))) { throw 'DXSDK d3d9.h not found.' }
+          "DXSDK_DIR=$dx" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
+          "VCPKG_ROOT=$vcpkg" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Restore vcpkg archives
         uses: actions/cache/restore@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
           key: rc6-vcpkg-${{ runner.os }}-x64-${{ hashFiles('patches/rc6-vcpkg-*.patch') }}
           restore-keys: rc6-vcpkg-${{ runner.os }}-x64-
+
       - name: Build x64 Vulkan DDS
         shell: pwsh
         working-directory: source
         run: |
-          $ErrorActionPreference='Continue';$log=Join-Path $PWD 'dds-build.log';& cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' 2>&1|Tee-Object -FilePath $log;$exit=$LASTEXITCODE
-          if($exit-ne 0){$m=Select-String $log -Pattern '(?i)fatal error C\d{4}|(?i)\berror C\d{4}\b|(?i)\berror LNK\d{4}\b|(?i)\berror MSB\d{4}\b'|Select-Object -First 1;if($m){Write-Host "FIRST_VULKAN_DDS_ERROR: $($m.Line)"};exit $exit}
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $PWD 'dds-build.log'
+          & cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' 2>&1 | Tee-Object -FilePath $log
+          $exit = $LASTEXITCODE
+          if ($exit -ne 0) {
+            $m = Select-String -Path $log -Pattern '(?i)fatal error C\d{4}|(?i)\berror C\d{4}\b|(?i)\berror LNK\d{4}\b|(?i)\berror MSB\d{4}\b' | Select-Object -First 1
+            if ($m) { Write-Host "FIRST_VULKAN_DDS_ERROR: $($m.Line)" }
+            exit $exit
+          }
+
       - name: Upload DDS artifact
         if: success()
         uses: actions/upload-artifact@v4
@@ -82,6 +136,7 @@ jobs:
           path: READY_RC6_X64_VULKAN
           if-no-files-found: error
           compression-level: 9
+
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
