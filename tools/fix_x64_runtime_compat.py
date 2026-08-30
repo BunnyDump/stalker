@@ -12,6 +12,12 @@ ISPATIAL_EMPTY_NEW = b'''\tBOOL _empty()\n\t{\n\t\treturn items.empty() && child
 STREAM_TELL_OLD = b'''IC u32 CStreamReader::tell() const\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tVERIFY(u32(m_current_pointer - m_start_pointer) <= m_current_window_size);\n\treturn (m_current_offset_from_start + (m_current_pointer - m_start_pointer));\n}'''
 STREAM_TELL_NEW = b'''IC u32 CStreamReader::tell() const\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tconst size_t window_offset = size_t(m_current_pointer - m_start_pointer);\n\tVERIFY(window_offset <= m_current_window_size);\n\treturn (m_current_offset_from_start + u32(window_offset));\n}'''
 
+STREAM_ADVANCE_OLD = b'''void CStreamReader::advance(const int& offset)\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tVERIFY(u32(m_current_pointer - m_start_pointer) <= m_current_window_size);\n\tint offset_inside_window = int(m_current_pointer - m_start_pointer);\n\tif (offset_inside_window + offset >= (int)m_current_window_size)\n\t{\n\t\tremap(m_current_offset_from_start + offset_inside_window + offset);\n\t\treturn;\n\t}\n\n\tif (offset_inside_window + offset < 0)\n\t{\n\t\tremap(m_current_offset_from_start + offset_inside_window + offset);\n\t\treturn;\n\t}\n\n\tm_current_pointer += offset;\n}'''
+STREAM_ADVANCE_NEW = b'''void CStreamReader::advance(const int& offset)\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tconst s64 offset_inside_window = s64(m_current_pointer - m_start_pointer);\n\tVERIFY(offset_inside_window >= 0);\n\tVERIFY(u64(offset_inside_window) <= m_current_window_size);\n\n\tconst s64 target_offset = offset_inside_window + s64(offset);\n\tif (target_offset >= s64(m_current_window_size) || target_offset < 0)\n\t{\n\t\tconst s64 absolute_offset = s64(m_current_offset_from_start) + target_offset;\n\t\tVERIFY(absolute_offset >= 0);\n\t\tVERIFY(u64(absolute_offset) <= m_file_size);\n\t\tremap(u32(absolute_offset));\n\t\treturn;\n\t}\n\n\tm_current_pointer += offset;\n}'''
+
+STREAM_READ_OLD = b'''void CStreamReader::r(void* _buffer, u32 buffer_size)\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tVERIFY(u32(m_current_pointer - m_start_pointer) <= m_current_window_size);\n\n\tint offset_inside_window = int(m_current_pointer - m_start_pointer);\n\tif (offset_inside_window + buffer_size < m_current_window_size)\n\t{\n\t\tMemory.mem_copy(_buffer, m_current_pointer, buffer_size);\n\t\tm_current_pointer += buffer_size;\n\t\treturn;\n\t}\n\n\tu8* buffer = (u8*)_buffer;\n\tu32 elapsed_in_window = m_current_window_size - (m_current_pointer - m_start_pointer);\n\n\tdo\n\t{\n\t\tMemory.mem_copy(buffer, m_current_pointer, elapsed_in_window);\n\t\tbuffer += elapsed_in_window;\n\t\tbuffer_size -= elapsed_in_window;\n\t\tadvance(elapsed_in_window);\n\n\t\telapsed_in_window = m_current_window_size;\n\t} while (m_current_window_size < buffer_size);\n\n\tMemory.mem_copy(buffer, m_current_pointer, buffer_size);\n\tadvance(buffer_size);\n}'''
+STREAM_READ_NEW = b'''void CStreamReader::r(void* _buffer, u32 buffer_size)\n{\n\tVERIFY(m_current_pointer >= m_start_pointer);\n\tconst size_t offset_inside_window = size_t(m_current_pointer - m_start_pointer);\n\tVERIFY(offset_inside_window <= m_current_window_size);\n\n\tif (offset_inside_window + buffer_size < m_current_window_size)\n\t{\n\t\tMemory.mem_copy(_buffer, m_current_pointer, buffer_size);\n\t\tm_current_pointer += buffer_size;\n\t\treturn;\n\t}\n\n\tu8* buffer = (u8*)_buffer;\n\tu32 elapsed_in_window = m_current_window_size - u32(offset_inside_window);\n\n\tdo\n\t{\n\t\tMemory.mem_copy(buffer, m_current_pointer, elapsed_in_window);\n\t\tbuffer += elapsed_in_window;\n\t\tbuffer_size -= elapsed_in_window;\n\t\tadvance(elapsed_in_window);\n\n\t\telapsed_in_window = m_current_window_size;\n\t} while (m_current_window_size < buffer_size);\n\n\tMemory.mem_copy(buffer, m_current_pointer, buffer_size);\n\tadvance(buffer_size);\n}'''
+
 
 def native_newlines(data: bytes, replacement: bytes) -> bytes:
     if b"\r\n" in data[:2048]:
@@ -68,18 +74,27 @@ def fix_ispatial_pointer_truncation(root: Path) -> None:
 
 
 def fix_stream_reader_pointer_width(root: Path) -> None:
-    path = root / "xrCore" / "stream_reader_inline.h"
-    if not path.is_file():
-        raise FileNotFoundError(path)
+    inline_path = root / "xrCore" / "stream_reader_inline.h"
+    source_path = root / "xrCore" / "stream_reader.cpp"
+    for path in (inline_path, source_path):
+        if not path.is_file():
+            raise FileNotFoundError(path)
 
-    replace_exact(path, STREAM_TELL_OLD, STREAM_TELL_NEW, "xrCore/stream_reader_inline.h tell pointer width")
+    replace_exact(inline_path, STREAM_TELL_OLD, STREAM_TELL_NEW, "xrCore/stream_reader_inline.h tell pointer width")
+    replace_exact(source_path, STREAM_ADVANCE_OLD, STREAM_ADVANCE_NEW, "xrCore/stream_reader.cpp advance pointer width")
+    replace_exact(source_path, STREAM_READ_OLD, STREAM_READ_NEW, "xrCore/stream_reader.cpp read pointer width")
 
-    data = path.read_bytes()
-    expected = native_newlines(data, STREAM_TELL_NEW)
-    if data.count(expected) != 1:
+    inline_data = inline_path.read_bytes()
+    if inline_data.count(native_newlines(inline_data, STREAM_TELL_NEW)) != 1:
         raise RuntimeError("xrCore/stream_reader_inline.h: pointer-width-safe tell validation failed")
 
-    print("[x64-stream] CStreamReader::tell validates pointer delta at native width before narrowing to u32")
+    source_data = source_path.read_bytes()
+    if source_data.count(native_newlines(source_data, STREAM_ADVANCE_NEW)) != 1:
+        raise RuntimeError("xrCore/stream_reader.cpp: pointer-width-safe advance validation failed")
+    if source_data.count(native_newlines(source_data, STREAM_READ_NEW)) != 1:
+        raise RuntimeError("xrCore/stream_reader.cpp: pointer-width-safe read validation failed")
+
+    print("[x64-stream] CStreamReader tell/advance/read preserve native pointer width before checked u32 narrowing")
 
 
 def main() -> int:
