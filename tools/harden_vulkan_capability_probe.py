@@ -8,6 +8,7 @@ from enable_vulkan_runtime_stack import install_runtime_stack
 from validate_vulkan_extensions import install_extension_validation
 from enable_vulkan_render_core import install_render_core
 from enable_vulkan_pipeline import install_pipeline
+from enable_vulkan_resource_upload import install_resource_upload
 
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
@@ -73,7 +74,8 @@ def harden(root: Path) -> None:
     install_extension_validation(root)
     install_render_core(root)
     install_pipeline(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline installed")
+    install_resource_upload(root)
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extensions + render core + SPIR-V pipeline + texture resources installed")
 
 
 def main() -> int:
