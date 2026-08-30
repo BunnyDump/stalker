@@ -10,6 +10,7 @@ from enable_vulkan_render_core import install_render_core
 from enable_vulkan_pipeline import install_pipeline
 from enable_vulkan_resource_upload import install_resource_upload
 from fix_vulkan_resource_declaration_order import fix as fix_resource_declaration_order
+from extend_vulkan_resource_formats import extend as extend_vulkan_resource_formats
 from decouple_vulkan_sun_math import decouple as decouple_vulkan_sun_math
 from fix_vulkan_sun_math_division import fix as fix_sun_math_division
 from decouple_vulkan_rendertarget_formats import decouple as decouple_vulkan_rendertarget_formats
@@ -81,11 +82,12 @@ def harden(root: Path) -> None:
     install_pipeline(root)
     install_resource_upload(root)
     fix_resource_declaration_order(root)
+    extend_vulkan_resource_formats(root)
     decouple_vulkan_sun_math(root)
     fix_sun_math_division(root)
     decouple_vulkan_rendertarget_formats(root)
     decouple_vulkan_rendertarget_topology(root)
-    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources + renderer-neutral sun math + render-target formats/topology installed")
+    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources/formats + renderer-neutral sun math + render-target formats/topology installed")
 
 
 def main() -> int:
