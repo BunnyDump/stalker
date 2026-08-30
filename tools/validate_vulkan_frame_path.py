@@ -5,11 +5,19 @@ from pathlib import Path
 
 
 def validate(root: Path) -> None:
-    source = root.resolve() / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
-    if not source.is_file():
-        raise FileNotFoundError(f"Materialized Vulkan bootstrap not found: {source}")
+    renderer = root.resolve() / "xr_3da" / "xrRender_VK"
+    source = renderer / "vk_bootstrap.cpp"
+    header = renderer / "vk_bootstrap.h"
+    render = renderer / "r2_R_render.cpp"
+    lifecycle = renderer / "r2.cpp"
+    for path in (source, header, render, lifecycle):
+        if not path.is_file():
+            raise FileNotFoundError(path)
 
     text = source.read_text(encoding="utf-8")
+    h = header.read_text(encoding="utf-8")
+    r = render.read_text(encoding="utf-8")
+    life = lifecycle.read_text(encoding="utf-8")
 
     required = (
         "PFN_vkCmdBeginRenderPass g_vkCmdBeginRenderPass",
@@ -34,10 +42,23 @@ def validate(root: Path) -> None:
         "g_vkCreateGraphicsPipelines(g_device, g_pipeline_cache",
         "VK_DYNAMIC_STATE_VIEWPORT",
         "VK_DYNAMIC_STATE_SCISSOR",
+        "bool g_frame_recording = false;",
+        "unsigned g_active_frame_image_index = ~0u;",
+        "bool xr_vk_bootstrap_begin_frame()",
+        "bool xr_vk_bootstrap_end_frame()",
+        "void* xr_vk_bootstrap_active_command_buffer()",
     )
     missing = [token for token in required if token not in text]
     if missing:
         raise RuntimeError("Vulkan frame-path validation failed; missing: " + ", ".join(missing))
+
+    for token in (
+        "bool xr_vk_bootstrap_begin_frame();",
+        "bool xr_vk_bootstrap_end_frame();",
+        "void* xr_vk_bootstrap_active_command_buffer();",
+    ):
+        if token not in h:
+            raise RuntimeError(f"Vulkan frame-path validation failed: public lifecycle declaration missing {token}")
 
     forbidden = (
         "VkImageMemoryBarrier to_transfer = {};",
@@ -49,36 +70,76 @@ def validate(root: Path) -> None:
     if stale:
         raise RuntimeError("Vulkan frame-path validation failed; legacy transfer-clear path remains: " + ", ".join(stale))
 
-    frame_start = text.find("bool xr_vk_bootstrap_frame()")
-    if frame_start < 0:
-        raise RuntimeError("Vulkan frame-path validation failed: xr_vk_bootstrap_frame not found")
-    frame_end = text.find("bool xr_vk_bootstrap_runtime_ready()", frame_start)
-    if frame_end < 0:
-        raise RuntimeError("Vulkan frame-path validation failed: frame function boundary not found")
-    frame = text[frame_start:frame_end]
+    begin_start = text.find("bool xr_vk_bootstrap_begin_frame()")
+    end_start = text.find("bool xr_vk_bootstrap_end_frame()", begin_start)
+    wrapper_start = text.find("bool xr_vk_bootstrap_frame()", end_start)
+    runtime_ready = text.find("bool xr_vk_bootstrap_runtime_ready()", wrapper_start)
+    if min(begin_start, end_start, wrapper_start, runtime_ready) < 0:
+        raise RuntimeError("Vulkan frame-path validation failed: split lifecycle boundaries not found")
+    if not begin_start < end_start < wrapper_start < runtime_ready:
+        raise RuntimeError("Vulkan frame-path validation failed: split lifecycle function order invalid")
 
-    ordered = (
+    begin = text[begin_start:end_start]
+    end = text[end_start:wrapper_start]
+    wrapper = text[wrapper_start:runtime_ready]
+
+    begin_order = (
         "g_vkBeginCommandBuffer",
         "g_vkCmdBeginRenderPass",
         "g_vkCmdSetViewport",
         "g_vkCmdSetScissor",
+        "g_active_frame_image_index = image_index",
+        "g_frame_recording = true",
+    )
+    begin_positions = [begin.find(token) for token in begin_order]
+    if any(pos < 0 for pos in begin_positions) or begin_positions != sorted(begin_positions):
+        raise RuntimeError("Vulkan frame-path validation failed: begin-frame recording order invalid")
+
+    end_order = (
         "g_vkCmdEndRenderPass",
         "g_vkEndCommandBuffer",
+        "g_vkResetFences",
         "g_vkQueueSubmit",
         "g_vkQueuePresentKHR",
+        "xr_vk_clear_active_frame_state()",
     )
-    positions = [frame.find(token) for token in ordered]
-    if any(pos < 0 for pos in positions) or positions != sorted(positions):
-        raise RuntimeError("Vulkan frame-path validation failed: command recording/submission order is invalid")
+    end_positions = [end.find(token) for token in end_order]
+    if any(pos < 0 for pos in end_positions) or end_positions != sorted(end_positions):
+        raise RuntimeError("Vulkan frame-path validation failed: end-frame submit/present order invalid")
 
-    if "g_render_pass == VK_NULL_HANDLE" not in frame or "image_index >= g_framebuffers.size()" not in frame:
-        raise RuntimeError("Vulkan frame-path validation failed: render-pass/framebuffer guards are missing")
+    if "g_render_pass == VK_NULL_HANDLE" not in begin or "image_index >= g_framebuffers.size()" not in begin:
+        raise RuntimeError("Vulkan frame-path validation failed: begin-frame render-pass/framebuffer guards missing")
+    if "xr_vk_bootstrap_begin_frame()" not in wrapper or "xr_vk_bootstrap_end_frame()" not in wrapper:
+        raise RuntimeError("Vulkan frame-path validation failed: compatibility frame wrapper incomplete")
 
-    print("[vulkan-frame-validate] native render-pass frame path, dynamic state, pipeline compatibility and synchronization verified")
+    render_required = (
+        '#include "vk_bootstrap.h"',
+        "class xr_vk_render_frame_scope",
+        "xr_vk_bootstrap_runtime_ready()",
+        'strstr(Core.Params, "-vkpresent")',
+        "active_ = xr_vk_bootstrap_begin_frame();",
+        "xr_vk_bootstrap_end_frame()",
+        "xr_vk_render_frame_scope vk_frame_scope;",
+        "void CRender::Render()",
+    )
+    for token in render_required:
+        if token not in r:
+            raise RuntimeError(f"Vulkan frame-path validation failed: R2 render scope missing {token}")
+
+    render_fn = r.find("void CRender::Render()")
+    scope_pos = r.find("xr_vk_render_frame_scope vk_frame_scope;", render_fn)
+    first_menu_return = r.find("return;", render_fn)
+    if min(render_fn, scope_pos, first_menu_return) < 0 or not render_fn < scope_pos < first_menu_return:
+        raise RuntimeError("Vulkan frame-path validation failed: RAII scope does not cover early Render returns")
+
+    if "xr_vk_bootstrap_frame();" in life:
+        raise RuntimeError("Vulkan frame-path validation failed: stale OnFrame presentation hook remains")
+
+    print("[vulkan-frame-validate] R2 Render-scoped begin/end render pass, active command buffer, dynamic state, safe submit/present and RAII early-return coverage verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the materialized RC6 Vulkan render-pass frame path.")
+    parser = argparse.ArgumentParser(description="Validate split RC6 Vulkan recording across the real R2 Render phase.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
