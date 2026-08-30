@@ -142,7 +142,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: rc6-vcpkg-${{ runner.os }}-x64-${{ hashFiles('patches/rc6-vcpkg-*.patch') }}
+          key: rc6-vcpkg-${{ runner.os }}-x64-${{ hashFiles('patches/rc6-vcpkg-*.patch', 'tools/vcpkg-overlay/**') }}
           restore-keys: |
             rc6-vcpkg-${{ runner.os }}-x64-
 
