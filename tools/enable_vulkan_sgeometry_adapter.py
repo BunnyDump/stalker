@@ -91,28 +91,41 @@ def install_sgeometry_adapter(root: Path) -> None:
             raise RuntimeError("Vulkan SGeometry adapter: shader-module helper marker not found")
         text = text.replace(helper_marker, helpers + helper_marker, 1)
 
-    signature = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+    legacy_signature = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
         const void* ps_data, size_t ps_size, const char* ps_entry,
         const xr_vk_vertex_input_layout* vertex_layout)
 '''
-    replacement = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+    topology_signature = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
         const void* ps_data, size_t ps_size, const char* ps_entry,
         const xr_vk_vertex_input_layout* vertex_layout, VkPrimitiveTopology topology)
 '''
-    if "const xr_vk_vertex_input_layout* vertex_layout, VkPrimitiveTopology topology" not in text:
-        if signature not in text:
+    hardened_topology_signature = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+        const void* ps_data, size_t ps_size, const char* ps_entry,
+        const xr_vk_vertex_input_layout* vertex_layout,
+        VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+'''
+    has_topology_signature = (
+        topology_signature in text
+        or hardened_topology_signature in text
+        or "VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST" in text
+    )
+    if not has_topology_signature:
+        if legacy_signature not in text:
             raise RuntimeError("Vulkan SGeometry adapter: graphics-pipeline signature marker not found")
-        text = text.replace(signature, replacement, 1)
+        text = text.replace(legacy_signature, topology_signature, 1)
 
     topology_marker = "        input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;\n"
     topology_replacement = '''        if (topology < VK_PRIMITIVE_TOPOLOGY_POINT_LIST || topology > VK_PRIMITIVE_TOPOLOGY_PATCH_LIST)
             return VK_NULL_HANDLE;
         input_assembly.topology = topology;
 '''
+    hardened_topology_guard = "topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM"
     if "input_assembly.topology = topology;" not in text:
         if topology_marker not in text:
             raise RuntimeError("Vulkan SGeometry adapter: hard-coded topology marker not found")
         text = text.replace(topology_marker, topology_replacement, 1)
+    elif hardened_topology_guard not in text and "topology < VK_PRIMITIVE_TOPOLOGY_POINT_LIST" not in text:
+        raise RuntimeError("Vulkan SGeometry adapter: topology assignment exists without a fail-closed validation guard")
 
     source.write_text(text, encoding="utf-8")
     final = source.read_text(encoding="utf-8")
@@ -145,6 +158,11 @@ def install_sgeometry_adapter(root: Path) -> None:
     for token in required:
         if token not in final:
             raise RuntimeError(f"Vulkan SGeometry adapter validation failed: missing {token}")
+    if (
+        "topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM" not in final
+        and "topology < VK_PRIMITIVE_TOPOLOGY_POINT_LIST" not in final
+    ):
+        raise RuntimeError("Vulkan SGeometry adapter validation failed: topology is not fail-closed")
 
     print("[vulkan-sgeometry] bounded native SGeometry + primitive topology + D3D index metadata translation installed")
 
