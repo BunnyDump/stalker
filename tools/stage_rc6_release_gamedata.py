@@ -21,34 +21,85 @@ def merge_tree(source: Path, destination: Path) -> list[str]:
     return copied
 
 
-def stage_runtime_closure(ready_root: Path) -> list[str]:
-    """Copy the complete DLL closure produced by the isolated OpenAL vcpkg install."""
+def _copy_dlls(source: Path, destination: Path) -> list[str]:
+    copied: list[str] = []
+    if not source.is_dir():
+        return copied
+    for dll in sorted(source.glob("*.dll"), key=lambda path: path.name.lower()):
+        shutil.copy2(dll, destination / dll.name)
+        copied.append(dll.name)
+    return copied
+
+
+def _find_vc_runtime_dir() -> Path | None:
+    candidates: list[Path] = []
+    explicit = os.environ.get("VCToolsRedistDir")
+    if explicit:
+        root = Path(explicit)
+        candidates.extend(
+            (
+                root / "x64" / "Microsoft.VC143.CRT",
+                root / "x64" / "Microsoft.VC142.CRT",
+            )
+        )
+
+    roots = [
+        Path(os.environ.get("ProgramFiles(x86)", "")) / "Microsoft Visual Studio" / "2022",
+        Path(os.environ.get("ProgramFiles", "")) / "Microsoft Visual Studio" / "2022",
+    ]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for edition in root.iterdir():
+            redist = edition / "VC" / "Redist" / "MSVC"
+            if not redist.is_dir():
+                continue
+            for version in redist.iterdir():
+                candidates.extend(
+                    (
+                        version / "x64" / "Microsoft.VC143.CRT",
+                        version / "x64" / "Microsoft.VC142.CRT",
+                    )
+                )
+
+    existing = [path for path in candidates if path.is_dir()]
+    if not existing:
+        return None
+    return sorted(existing, key=lambda path: str(path).lower())[-1]
+
+
+def stage_runtime_closure(ready_root: Path) -> tuple[list[str], list[str]]:
+    """Copy OpenAL/vcpkg and MSVC redistributable DLLs needed by the built runtime."""
     bin_dir = ready_root / "bin"
     if not bin_dir.is_dir():
         raise FileNotFoundError(f"RC6 bin directory not found: {bin_dir}")
 
     temp_root = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "")
-    candidates = (
+    openal_candidates = (
         temp_root / "xray-rc6-vcpkg" / "installed-openal" / "x64-windows" / "bin",
         temp_root / "xray-rc6-vcpkg" / "installed-openal" / "x64-windows" / "debug" / "bin",
     )
 
-    copied: list[str] = []
-    for candidate in candidates:
-        if not candidate.is_dir():
-            continue
-        for dll in sorted(candidate.glob("*.dll")):
-            shutil.copy2(dll, bin_dir / dll.name)
-            copied.append(dll.name)
+    openal_files: list[str] = []
+    for candidate in openal_candidates:
+        openal_files.extend(_copy_dlls(candidate, bin_dir))
 
     if (bin_dir / "OpenAL32.dll").is_file() and not (bin_dir / "fmt.dll").is_file():
-        searched = ", ".join(str(path) for path in candidates)
+        searched = ", ".join(str(path) for path in openal_candidates)
         raise RuntimeError(
             "OpenAL32.dll is present but fmt.dll was not staged; refusing to publish a broken bin. "
             f"Searched: {searched}"
         )
 
-    return sorted(set(copied), key=str.lower)
+    vc_files: list[str] = []
+    vc_runtime = _find_vc_runtime_dir()
+    if vc_runtime is not None:
+        vc_files = _copy_dlls(vc_runtime, bin_dir)
+
+    return (
+        sorted(set(openal_files), key=str.lower),
+        sorted(set(vc_files), key=str.lower),
+    )
 
 
 def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
@@ -84,23 +135,29 @@ def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
     lines.extend(overlay_files if overlay_files else ["(none)"])
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    runtime_files = stage_runtime_closure(ready_root)
+    openal_files, vc_files = stage_runtime_closure(ready_root)
+    runtime_lines = [
+        "RC6 Windows runtime closure staged into bin:",
+        "",
+        "OpenAL/vcpkg DLLs:",
+        *(openal_files if openal_files else ["(none)"]),
+        "",
+        "Microsoft VC Redistributable DLLs:",
+        *(vc_files if vc_files else ["(none)"]),
+    ]
     (ready_root / "RUNTIME_DEPENDENCIES.txt").write_text(
-        "OpenAL/vcpkg runtime DLL closure staged into bin:\n"
-        + ("\n".join(runtime_files) if runtime_files else "(none)")
-        + "\n",
-        encoding="utf-8",
+        "\n".join(runtime_lines) + "\n", encoding="utf-8"
     )
 
     print(
         f"[release-stage] sparse gamedata files: {len(overlay_files)}; "
-        f"OpenAL runtime DLLs: {len(runtime_files)}"
+        f"OpenAL runtime DLLs: {len(openal_files)}; VC runtime DLLs: {len(vc_files)}"
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Stage sparse integration gamedata and the OpenAL runtime dependency closure."
+        description="Stage sparse integration gamedata and Windows runtime dependency closure."
     )
     parser.add_argument("source_pos", nargs="?")
     parser.add_argument("ready_pos", nargs="?")
