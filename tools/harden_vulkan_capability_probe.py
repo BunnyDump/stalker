@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from enable_vulkan_device_selection import enable_device_selection
+
 PROBE_DECL = "bool xr_vk_bootstrap_probe();\n"
 PROBE_IMPL = r'''
 bool xr_vk_bootstrap_probe()
@@ -62,7 +64,8 @@ def harden(root: Path) -> None:
     if "xr_vk_bootstrap_shutdown()" in test_hw.read_text(encoding="utf-8"):
         raise RuntimeError("Vulkan probe hardening validation failed: hardware probe owns runtime shutdown")
 
-    print("[vulkan-capability] hardware probe is lifecycle-safe and cannot destroy an already active Vulkan instance")
+    enable_device_selection(root)
+    print("[vulkan-capability] hardware probe is lifecycle-safe; physical-device and graphics queue selection chained")
 
 
 def main() -> int:
