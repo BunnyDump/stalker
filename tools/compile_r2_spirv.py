@@ -5,7 +5,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from prepare_r2_hlsl_for_spirv import preprocess_file
+from prepare_r2_hlsl_for_spirv import preprocess_tree
 
 
 def compiler_command(compiler: Path, src: Path, out: Path, include_dir: Path, stage: str) -> list[str]:
@@ -40,6 +40,10 @@ def main() -> int:
     for p in (prepared, spirv, logs):
         p.mkdir(parents=True, exist_ok=True)
 
+    # Mirror the complete shader/header tree first so every transitive include is
+    # normalized for the host platform before glslang parses any entry point.
+    preprocess_tree(root, prepared)
+
     shaders = sorted([p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in {".vs", ".ps"}])
     if not shaders:
         raise SystemExit(f"No R2 .vs/.ps shaders found under {root}")
@@ -49,13 +53,10 @@ def main() -> int:
     for src in shaders:
         rel = src.relative_to(root)
         prep = prepared / rel
-        preprocess_file(src, prep)
         stage = "vert" if src.suffix.lower() == ".vs" else "frag"
         out = spirv / rel.with_suffix(rel.suffix + ".spv")
         out.parent.mkdir(parents=True, exist_ok=True)
-        # Prepared stage files keep the original relative path; legacy headers remain
-        # authoritative in the source corpus and are resolved from root.
-        cmd = compiler_command(args.compiler, prep, out, root, stage)
+        cmd = compiler_command(args.compiler, prep, out, prepared, stage)
         proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         log = logs / rel.with_suffix(rel.suffix + ".log")
         log.parent.mkdir(parents=True, exist_ok=True)
