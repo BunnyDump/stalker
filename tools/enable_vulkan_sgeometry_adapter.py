@@ -33,6 +33,42 @@ def install_sgeometry_adapter(root: Path) -> None:
         }
     }
 
+    bool xr_vk_d3d_index_format_to_type(D3DFORMAT format, VkIndexType& index_type, u32& index_stride)
+    {
+        switch (format)
+        {
+        case D3DFMT_INDEX16:
+            index_type = VK_INDEX_TYPE_UINT16;
+            index_stride = sizeof(u16);
+            return true;
+        case D3DFMT_INDEX32:
+            index_type = VK_INDEX_TYPE_UINT32;
+            index_stride = sizeof(u32);
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool xr_vk_primitive_element_count(D3DPRIMITIVETYPE primitive, u32 primitive_count, u32& element_count)
+    {
+        if (!primitive_count)
+        {
+            element_count = 0;
+            return true;
+        }
+        switch (primitive)
+        {
+        case D3DPT_POINTLIST: element_count = primitive_count; return true;
+        case D3DPT_LINELIST: element_count = primitive_count * 2; return true;
+        case D3DPT_LINESTRIP: element_count = primitive_count + 1; return true;
+        case D3DPT_TRIANGLELIST: element_count = primitive_count * 3; return true;
+        case D3DPT_TRIANGLESTRIP:
+        case D3DPT_TRIANGLEFAN: element_count = primitive_count + 2; return true;
+        default: return false;
+        }
+    }
+
     bool xr_vk_build_sgeometry_layout(const SGeometry* geometry, D3DPRIMITIVETYPE primitive,
         xr_vk_vertex_input_layout& vertex_input, VkPrimitiveTopology& topology)
     {
@@ -87,6 +123,14 @@ def install_sgeometry_adapter(root: Path) -> None:
         "VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP",
         "D3DPT_TRIANGLEFAN",
         "VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN",
+        "xr_vk_d3d_index_format_to_type",
+        "D3DFMT_INDEX16",
+        "VK_INDEX_TYPE_UINT16",
+        "D3DFMT_INDEX32",
+        "VK_INDEX_TYPE_UINT32",
+        "xr_vk_primitive_element_count",
+        "primitive_count * 3",
+        "primitive_count + 2",
         "xr_vk_build_sgeometry_layout",
         "geometry->dcl._get()",
         "declaration->dcl_code[0]",
@@ -98,11 +142,11 @@ def install_sgeometry_adapter(root: Path) -> None:
         if token not in final:
             raise RuntimeError(f"Vulkan SGeometry adapter validation failed: missing {token}")
 
-    print("[vulkan-sgeometry] native SHOC SGeometry declaration/stride + D3D primitive topology adapter installed")
+    print("[vulkan-sgeometry] native SGeometry + primitive topology + D3D index metadata translation installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Adapt native SHOC SGeometry resources into Vulkan vertex-input/topology state.")
+    parser = argparse.ArgumentParser(description="Adapt native SHOC SGeometry and indexed draw metadata into Vulkan state.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     install_sgeometry_adapter(Path(args.root))
