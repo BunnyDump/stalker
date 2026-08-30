@@ -5,6 +5,7 @@ from pathlib import Path
 
 from enable_vulkan_bootstrap import enable_vulkan_bootstrap
 from enable_vulkan_capability_probe import enable_vulkan_capability_probe
+from harden_vulkan_capability_probe import harden as harden_vulkan_capability_probe
 
 JIT_GUARD_OLD = b"#ifdef USE_JIT"
 JIT_GUARD_NEW = b"#if defined(USE_JIT) && !defined(_WIN64)"
@@ -86,6 +87,7 @@ def main() -> int:
     fix_stream_reader_pointer_width(root)
     enable_vulkan_bootstrap(root)
     enable_vulkan_capability_probe(root)
+    harden_vulkan_capability_probe(root)
     return 0
 
 
