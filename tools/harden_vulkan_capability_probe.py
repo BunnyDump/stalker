@@ -9,6 +9,7 @@ from validate_vulkan_extensions import install_extension_validation
 from enable_vulkan_render_core import install_render_core
 from enable_vulkan_pipeline import install_pipeline
 from enable_vulkan_resource_upload import install_resource_upload
+from enable_vulkan_dds_upload import install_dds_upload
 from decouple_vulkan_sun_math import decouple as decouple_vulkan_sun_math
 from enable_vulkan_renderer_define import enable_renderer_define
 
@@ -77,9 +78,10 @@ def harden(root: Path) -> None:
     install_render_core(root)
     install_pipeline(root)
     install_resource_upload(root)
+    install_dds_upload(root)
     decouple_vulkan_sun_math(root)
     enable_renderer_define(root)
-    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources + sun math + XRRENDER_VULKAN define installed")
+    print("[vulkan-capability] runtime + render core + SPIR-V pipeline + resources + native DDS + sun math + XRRENDER_VULKAN installed")
 
 
 def main() -> int:
