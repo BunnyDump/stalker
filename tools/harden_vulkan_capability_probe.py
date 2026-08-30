@@ -7,6 +7,7 @@ from enable_vulkan_device_selection import enable_device_selection
 from enable_vulkan_runtime_stack import install_runtime_stack
 from validate_vulkan_extensions import install_extension_validation
 from enable_vulkan_render_core import install_render_core
+from harden_vulkan_upload_capacity import harden as harden_vulkan_upload_capacity
 from enable_vulkan_pipeline import install_pipeline
 from enable_vulkan_renderpass_frame import install_renderpass_frame
 from enable_vulkan_dynamic_state import install_dynamic_state
@@ -95,6 +96,7 @@ def harden(root: Path) -> None:
     install_runtime_stack(root)
     install_extension_validation(root)
     install_render_core(root)
+    harden_vulkan_upload_capacity(root)
     install_pipeline(root)
     install_renderpass_frame(root)
     install_dynamic_state(root)
@@ -119,7 +121,7 @@ def harden(root: Path) -> None:
     validate_vulkan_material_descriptors(root)
     validate_vulkan_texture_bridge(root)
     validate_vulkan_uniform_stream(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + indexed draw packets + 8192-set descriptor capacity + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + indexed draw packets + 8192-set descriptor capacity + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
 
 
 def main() -> int:
