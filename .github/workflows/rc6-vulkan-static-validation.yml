@@ -78,6 +78,7 @@ jobs:
           python tools/validate_vulkan_indexed_draw.py source
           python tools/validate_vulkan_material_descriptors.py source
           python tools/validate_vulkan_texture_bridge.py source
+          python tools/validate_vulkan_uniform_stream.py source
 
       - name: Verify materialized renderer contract
         shell: bash
@@ -92,7 +93,10 @@ jobs:
           grep -Fq 'vkCmdCopyBufferToImage' "$vk"
           grep -Fq 'xr_vk_max_mip_levels' "$vk"
           grep -Fq 'xr_vk_mip_extent(texture, mip_level, mip_width, mip_height)' "$vk"
+          grep -Fq 'xr_vk_texture_block_info' "$vk"
+          grep -Fq 'staging_offset % block_bytes' "$vk"
           grep -Fq 'xr_vk_allocate_texture_material' "$vk"
+          grep -Fq 'xr_vk_uniform_stream' "$vk"
           grep -Fq 'xr_vk_bootstrap_frame' "$vk"
 
           echo 'Static RC6 Vulkan materialization contract passed.'
