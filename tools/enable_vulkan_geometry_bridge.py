@@ -46,11 +46,36 @@ def install_geometry_bridge(root: Path) -> None:
         }
     }
 
-    bool xr_vk_build_vertex_input_layout(const D3DVERTEXELEMENT9* decl, u32 stride,
+    u32 xr_vk_d3d_decl_type_size(BYTE type)
+    {
+        switch (type)
+        {
+        case D3DDECLTYPE_FLOAT1: return 4;
+        case D3DDECLTYPE_FLOAT2: return 8;
+        case D3DDECLTYPE_FLOAT3: return 12;
+        case D3DDECLTYPE_FLOAT4: return 16;
+        case D3DDECLTYPE_D3DCOLOR:
+        case D3DDECLTYPE_UBYTE4:
+        case D3DDECLTYPE_UBYTE4N:
+        case D3DDECLTYPE_UDEC3:
+        case D3DDECLTYPE_DEC3N: return 4;
+        case D3DDECLTYPE_SHORT2:
+        case D3DDECLTYPE_SHORT2N:
+        case D3DDECLTYPE_USHORT2N:
+        case D3DDECLTYPE_FLOAT16_2: return 4;
+        case D3DDECLTYPE_SHORT4:
+        case D3DDECLTYPE_SHORT4N:
+        case D3DDECLTYPE_USHORT4N:
+        case D3DDECLTYPE_FLOAT16_4: return 8;
+        default: return 0;
+        }
+    }
+
+    bool xr_vk_build_vertex_input_layout(const D3DVERTEXELEMENT9* decl, u32 decl_count, u32 stride,
         xr_vk_vertex_input_layout& out)
     {
         ZeroMemory(&out, sizeof(out));
-        if (!decl || !stride)
+        if (!decl || !decl_count || decl_count > MAX_FVF_DECL_SIZE || !stride)
             return false;
 
         out.binding_count = 1;
@@ -58,18 +83,25 @@ def install_geometry_bridge(root: Path) -> None:
         out.bindings[0].stride = stride;
         out.bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        for (u32 i = 0; i < MAX_FVF_DECL_SIZE; ++i)
+        bool terminated = false;
+        for (u32 i = 0; i < decl_count; ++i)
         {
             const D3DVERTEXELEMENT9& element = decl[i];
             if (element.Stream == 0xff && element.Type == D3DDECLTYPE_UNUSED)
-                return out.attribute_count != 0;
+            {
+                terminated = true;
+                break;
+            }
             // SHOC SGeometry owns one D3D9 vertex buffer and binds it as stream zero.
             // Reject unsupported multi-stream declarations instead of silently corrupting input.
             if (element.Stream != 0 || element.Method != D3DDECLMETHOD_DEFAULT)
                 return false;
 
             const VkFormat format = xr_vk_d3d_decl_type_to_format(element.Type);
-            if (format == VK_FORMAT_UNDEFINED)
+            const u32 element_size = xr_vk_d3d_decl_type_size(element.Type);
+            if (format == VK_FORMAT_UNDEFINED || !element_size ||
+                static_cast<u32>(element.Offset) + element_size > stride ||
+                out.attribute_count >= MAX_FVF_DECL_SIZE)
                 return false;
 
             VkVertexInputAttributeDescription& attribute = out.attributes[out.attribute_count];
@@ -79,7 +111,7 @@ def install_geometry_bridge(root: Path) -> None:
             attribute.offset = element.Offset;
             ++out.attribute_count;
         }
-        return false;
+        return terminated && out.attribute_count != 0;
     }
 
 '''
@@ -121,10 +153,15 @@ def install_geometry_bridge(root: Path) -> None:
     required = (
         "xr_vk_vertex_input_layout",
         "xr_vk_d3d_decl_type_to_format",
+        "xr_vk_d3d_decl_type_size",
         "D3DDECLTYPE_FLOAT3",
         "D3DDECLTYPE_D3DCOLOR",
         "D3DDECLTYPE_FLOAT16_4",
         "xr_vk_build_vertex_input_layout",
+        "u32 decl_count",
+        "decl_count > MAX_FVF_DECL_SIZE",
+        "static_cast<u32>(element.Offset) + element_size > stride",
+        "return terminated && out.attribute_count != 0",
         "element.Offset",
         "vertexBindingDescriptionCount",
         "vertexAttributeDescriptionCount",
@@ -133,7 +170,7 @@ def install_geometry_bridge(root: Path) -> None:
     for token in required:
         if token not in final:
             raise RuntimeError(f"Vulkan geometry bridge validation failed: missing {token}")
-    print("[vulkan-geometry] D3D9 declaration -> Vulkan binding/attribute translation installed")
+    print("[vulkan-geometry] bounded D3D9 declaration -> Vulkan binding/attribute translation installed")
 
 
 def main() -> int:
