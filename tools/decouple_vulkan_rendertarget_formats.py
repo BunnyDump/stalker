@@ -7,7 +7,7 @@ FORMAT_BLOCK = r'''
 //////////////////////////////////////////////////////////////////////////
 // Renderer-neutral render-target format vocabulary. The transitional
 // D3D9 fallback conversion is intentionally centralized here; Vulkan code
-// can map the same logical formats to VkFormat without leaking D3DFORMAT
+// can map the same logical formats to VkFormat without leaking backend types
 // through the render-target construction policy.
 enum XrRtFormat
 {
@@ -16,7 +16,8 @@ enum XrRtFormat
     XR_RT_FORMAT_R5G6B5,
     XR_RT_FORMAT_R32F,
     XR_RT_FORMAT_D24,
-    XR_RT_FORMAT_A8L8
+    XR_RT_FORMAT_A8L8,
+    XR_RT_FORMAT_SNORM8X4
 };
 
 static inline D3DFORMAT xr_rt_legacy_format(XrRtFormat format)
@@ -29,8 +30,19 @@ static inline D3DFORMAT xr_rt_legacy_format(XrRtFormat format)
     case XR_RT_FORMAT_R32F: return D3DFMT_R32F;
     case XR_RT_FORMAT_D24: return D3DFMT_D24X8;
     case XR_RT_FORMAT_A8L8: return D3DFMT_A8L8;
+    case XR_RT_FORMAT_SNORM8X4: return D3DFMT_Q8W8V8U8;
     default: NODEFAULT; return D3DFMT_UNKNOWN;
     }
+}
+
+static inline D3DFORMAT xr_rt_legacy_runtime_format(u32 raw_format)
+{
+    return static_cast<D3DFORMAT>(raw_format);
+}
+
+static inline D3DFORMAT xr_rt_legacy_null_format()
+{
+    return static_cast<D3DFORMAT>(MAKEFOURCC('N', 'U', 'L', 'L'));
 }
 //////////////////////////////////////////////////////////////////////////
 '''
@@ -44,14 +56,17 @@ EXACT_REPLACEMENTS = (
     ("rt_Accumulator_temp.create(r2_RT_accum_temp, w, h, D3DFMT_A16B16G16R16F);", "rt_Accumulator_temp.create(r2_RT_accum_temp, w, h, xr_rt_legacy_format(XR_RT_FORMAT_RGBA16F));"),
     ("rt_Generic_0.create(r2_RT_generic0, w, h, D3DFMT_A8R8G8B8);", "rt_Generic_0.create(r2_RT_generic0, w, h, xr_rt_legacy_format(XR_RT_FORMAT_BGRA8));"),
     ("rt_Generic_1.create(r2_RT_generic1, w, h, D3DFMT_A8R8G8B8);", "rt_Generic_1.create(r2_RT_generic1, w, h, xr_rt_legacy_format(XR_RT_FORMAT_BGRA8));"),
-    ("D3DFORMAT nullrt = D3DFMT_R5G6B5;", "D3DFORMAT nullrt = xr_rt_legacy_format(XR_RT_FORMAT_R5G6B5);"),
+    ("D3DFORMAT depth_format = (D3DFORMAT)RImplementation.o.HW_smap_FORMAT;", "const auto depth_format = xr_rt_legacy_runtime_format(RImplementation.o.HW_smap_FORMAT);"),
+    ("D3DFORMAT nullrt = D3DFMT_R5G6B5;", "auto nullrt = xr_rt_legacy_format(XR_RT_FORMAT_R5G6B5);"),
+    ("nullrt = (D3DFORMAT)MAKEFOURCC('N', 'U', 'L', 'L');", "nullrt = xr_rt_legacy_null_format();"),
     ("rt_smap_surf.create(r2_RT_smap_surf, size, size, D3DFMT_R32F);", "rt_smap_surf.create(r2_RT_smap_surf, size, size, xr_rt_legacy_format(XR_RT_FORMAT_R32F));"),
-    ("D3DFORMAT fmt = D3DFMT_A8R8G8B8;", "D3DFORMAT fmt = xr_rt_legacy_format(XR_RT_FORMAT_BGRA8);"),
+    ("D3DFORMAT fmt = D3DFMT_A8R8G8B8;", "const auto fmt = xr_rt_legacy_format(XR_RT_FORMAT_BGRA8);"),
     ("rt_LUM_64.create(r2_RT_luminance_t64, 64, 64, D3DFMT_A16B16G16R16F);", "rt_LUM_64.create(r2_RT_luminance_t64, 64, 64, xr_rt_legacy_format(XR_RT_FORMAT_RGBA16F));"),
     ("rt_LUM_8.create(r2_RT_luminance_t8, 8, 8, D3DFMT_A16B16G16R16F);", "rt_LUM_8.create(r2_RT_luminance_t8, 8, 8, xr_rt_legacy_format(XR_RT_FORMAT_RGBA16F));"),
     ("rt_LUM_pool[it].create(name, 1, 1, D3DFMT_R32F);", "rt_LUM_pool[it].create(name, 1, 1, xr_rt_legacy_format(XR_RT_FORMAT_R32F));"),
     ("D3DFMT_D24X8, D3DMULTISAMPLE_NONE", "xr_rt_legacy_format(XR_RT_FORMAT_D24), D3DMULTISAMPLE_NONE"),
     ("D3DFMT_A8L8,", "xr_rt_legacy_format(XR_RT_FORMAT_A8L8),"),
+    ("D3DFMT_Q8W8V8U8,", "xr_rt_legacy_format(XR_RT_FORMAT_SNORM8X4),"),
 )
 
 
@@ -75,11 +90,17 @@ def decouple(root: Path) -> None:
 
     path.write_text(text, encoding="utf-8")
     final = path.read_text(encoding="utf-8")
-    for token in ("enum XrRtFormat", "XR_RT_FORMAT_RGBA16F", "xr_rt_legacy_format"):
+    for token in ("enum XrRtFormat", "XR_RT_FORMAT_RGBA16F", "XR_RT_FORMAT_SNORM8X4", "xr_rt_legacy_runtime_format", "xr_rt_legacy_null_format"):
         if token not in final:
             raise RuntimeError(f"render-target format validation missing {token}")
-    if applied < 12:
-        raise RuntimeError(f"render-target format decoupling expected at least 12 substitutions, applied {applied}")
+    if applied < 17:
+        raise RuntimeError(f"render-target format decoupling expected at least 17 substitutions, applied {applied}")
+
+    adapter_end = final.find("//////////////////////////////////////////////////////////////////////////", final.find("enum XrRtFormat") + 1)
+    body = final[adapter_end + len("//////////////////////////////////////////////////////////////////////////"):]
+    for token in ("D3DFORMAT depth_format", "D3DFORMAT nullrt", "D3DFORMAT fmt", "D3DFMT_Q8W8V8U8"):
+        if token in body:
+            raise RuntimeError(f"backend format type/token remains in render-target policy: {token}")
     print(f"[vulkan-rendertarget-formats] centralized {applied} legacy format uses behind renderer-neutral formats")
 
 
