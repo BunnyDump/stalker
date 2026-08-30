@@ -16,6 +16,7 @@ from enable_vulkan_geometry_bridge import install_geometry_bridge
 from enable_vulkan_sgeometry_adapter import install_sgeometry_adapter
 from enable_vulkan_stream_mirror import install_stream_mirror
 from harden_vulkan_stream_lifetime import harden as harden_vulkan_stream_lifetime
+from validate_vulkan_stream_lifetime import validate as validate_vulkan_stream_lifetime
 from enable_vulkan_indexed_draw import install_indexed_draw
 from enable_vulkan_material_descriptors import install_material_descriptors
 from harden_vulkan_descriptor_capacity import harden as harden_vulkan_descriptor_capacity
@@ -117,6 +118,7 @@ def harden(root: Path) -> None:
     install_uniform_stream(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
+    validate_vulkan_stream_lifetime(root)
     validate_vulkan_indexed_draw(root)
     validate_vulkan_material_descriptors(root)
     validate_vulkan_texture_bridge(root)
