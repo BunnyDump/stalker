@@ -134,7 +134,10 @@ jobs:
           grep -Fq 'xr_vk_uniform_stream' "$vk"
           grep -Fq 'xr_vk_bootstrap_frame' "$vk"
           grep -Fq 'g_frame_submission_pending' "$vk"
-          grep -Fq '64 * 1024 * 1024' "$vk"
+          grep -Fq 'xr_vk_create_buffer(67108864ull' "$vk"
+          grep -Fq 'void xr_vk_destroy_swapchain_resources()' "$vk"
+          grep -Fq 'g_descriptor_pool == VK_NULL_HANDLE' "$vk"
+          grep -Fq 'g_uniform_buffer == VK_NULL_HANDLE' "$vk"
 
           python - <<'PY'
           from pathlib import Path
@@ -160,14 +163,28 @@ jobs:
           present_recreate = frame.index('xr_vk_recreate_swapchain_from_window()', present_ood)
           if not acquire_ood < acquire_recreate < present_ood < present_recreate:
               raise SystemExit('Swapchain OUT_OF_DATE recreation path is incomplete')
+
           resize_start = text.index('bool xr_vk_bootstrap_resize(unsigned width, unsigned height)')
-          resize_end = text.index('bool xr_vk_recreate_swapchain_from_window()', resize_start)
-          resize = text[resize_start:resize_end]
-          zero_guard = resize.index('if (!width || !height)')
-          destroy = resize.index('xr_vk_destroy_frame_resources()')
-          if not zero_guard < destroy:
+          frame_start = text.index('bool xr_vk_bootstrap_frame()', resize_start)
+          resize_and_recreate = text[resize_start:frame_start]
+          zero_guard = resize_and_recreate.index('if (!width || !height)')
+          partial_destroy = resize_and_recreate.index('xr_vk_destroy_swapchain_resources()')
+          if not zero_guard < partial_destroy:
               raise SystemExit('Minimized zero-extent swapchain is destroyed prematurely')
-          destroy_start = text.index('void xr_vk_destroy_frame_resources()')
+          if 'xr_vk_destroy_frame_resources();' in resize_and_recreate:
+              raise SystemExit('Resize invalidates persistent Vulkan material/device resources')
+
+          partial_start = text.index('void xr_vk_destroy_swapchain_resources()')
+          full_start = text.index('void xr_vk_destroy_frame_resources()', partial_start)
+          partial = text[partial_start:full_start]
+          for forbidden in (
+              'g_vkDestroyDescriptorPool', 'g_vkDestroyDescriptorSetLayout', 'g_vkDestroyPipelineLayout',
+              'g_vkDestroyPipelineCache', 'g_vkDestroySampler', 'g_uniform_buffer', 'g_upload_buffer',
+              'g_stream_vertex_buffer', 'g_stream_index_buffer'):
+              if forbidden in partial:
+                  raise SystemExit(f'Swapchain teardown incorrectly owns persistent resource: {forbidden}')
+
+          destroy_start = full_start
           destroy_end = text.index('void xr_vk_destroy_window_runtime()', destroy_start)
           destroy_frame = text[destroy_start:destroy_end]
           idle = destroy_frame.index('g_vkDeviceWaitIdle')
