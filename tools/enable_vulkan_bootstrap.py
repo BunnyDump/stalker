@@ -130,14 +130,14 @@ def patch_dependency_script(root: Path) -> None:
         text = text.replace(old, new, 1)
 
     marker = "# OpenAL Soft x64 replaces the legacy 32-bit Router/wrap_oal pair."
-    copy_block = """# Vulkan headers are used by xrRender_VK while the loader is resolved dynamically at runtime.\n$vulkanHeaders=Join-Path $inst 'include\\vulkan'\nif(-not (Test-Path $vulkanHeaders)){ throw 'vcpkg vulkan-headers include directory not found.' }\nCopy-Item -Recurse -Force $vulkanHeaders $incDst\n"""
+    copy_block = """# Vulkan headers are used by xrRender_VK while the loader is resolved dynamically at runtime.\n$vulkanHeaders=Join-Path $inst 'include\\vulkan'\n$vulkanVideoHeaders=Join-Path $inst 'include\\vk_video'\nif(-not (Test-Path $vulkanHeaders)){ throw 'vcpkg vulkan-headers include directory not found.' }\nif(-not (Test-Path $vulkanVideoHeaders)){ throw 'vcpkg vulkan video headers include directory not found.' }\nCopy-Item -Recurse -Force $vulkanHeaders $incDst\nCopy-Item -Recurse -Force $vulkanVideoHeaders $incDst\n"""
     if copy_block not in text:
         if marker not in text:
             raise RuntimeError("Vulkan bootstrap: OpenAL marker not found in dependency script")
         text = text.replace(marker, copy_block + marker, 1)
 
     path.write_text(text, encoding="utf-8")
-    print("[vulkan-deps] vulkan-headers added to RC6 vcpkg dependency preparation")
+    print("[vulkan-deps] vulkan-headers + vk_video headers added to RC6 vcpkg dependency preparation")
 
 
 def patch_renderer_project(renderer: Path) -> None:
