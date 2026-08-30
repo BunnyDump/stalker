@@ -14,7 +14,8 @@ enum XrRtVertexLayout
     XR_RT_VERTEX_BLOOM_BUILD,
     XR_RT_VERTEX_BLOOM_FILTER,
     XR_RT_VERTEX_AA_BLUR,
-    XR_RT_VERTEX_AA
+    XR_RT_VERTEX_AA,
+    XR_RT_VERTEX_POSTPROCESS
 };
 
 static inline u32 xr_rt_legacy_fvf(XrRtVertexLayout layout)
@@ -40,6 +41,8 @@ static inline u32 xr_rt_legacy_fvf(XrRtVertexLayout layout)
             D3DFVF_TEXCOORDSIZE2(2) | D3DFVF_TEXCOORDSIZE2(3) |
             D3DFVF_TEXCOORDSIZE2(4) | D3DFVF_TEXCOORDSIZE4(5) |
             D3DFVF_TEXCOORDSIZE4(6);
+    case XR_RT_VERTEX_POSTPROCESS:
+        return D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX3;
     default:
         NODEFAULT;
         return 0;
@@ -55,6 +58,8 @@ EXACT_REPLACEMENTS = (
      "g_accum_omnipart.create(xr_rt_legacy_fvf(XR_RT_VERTEX_POSITION), g_accum_omnip_vb, g_accum_omnip_ib);"),
     ("g_accum_spot.create(D3DFVF_XYZ, g_accum_spot_vb, g_accum_spot_ib);",
      "g_accum_spot.create(xr_rt_legacy_fvf(XR_RT_VERTEX_POSITION), g_accum_spot_vb, g_accum_spot_ib);"),
+    ("g_postprocess.create(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX3, RCache.Vertex.Buffer(),",
+     "g_postprocess.create(xr_rt_legacy_fvf(XR_RT_VERTEX_POSTPROCESS), RCache.Vertex.Buffer(),"),
 )
 
 
@@ -106,14 +111,12 @@ def decouple(root: Path) -> None:
 
     path.write_text(text, encoding="utf-8")
     final = path.read_text(encoding="utf-8")
-    for token in ("enum XrRtVertexLayout", "xr_rt_legacy_fvf", "XR_RT_VERTEX_BLOOM_FILTER"):
+    for token in ("enum XrRtVertexLayout", "xr_rt_legacy_fvf", "XR_RT_VERTEX_BLOOM_FILTER", "XR_RT_VERTEX_POSTPROCESS"):
         if token not in final:
             raise RuntimeError(f"render-target FVF validation missing {token}")
-    if applied < 7:
-        raise RuntimeError(f"expected at least 7 render-target FVF conversions, got {applied}")
+    if applied < 8:
+        raise RuntimeError(f"expected at least 8 render-target FVF conversions, got {applied}")
 
-    # Direct FVF tokens may remain inside the one backend adapter, but not in
-    # render-target construction policy below it.
     adapter_end = final.find("//////////////////////////////////////////////////////////////////////////", final.find("enum XrRtVertexLayout") + 1)
     body = final[adapter_end + len("//////////////////////////////////////////////////////////////////////////"):]
     if "D3DFVF_" in body:
