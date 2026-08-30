@@ -1,0 +1,21 @@
+S.T.A.L.K.E.R. Shadow of Chernobyl - original gamedata baseline for RC6 overlay work
+
+User-supplied archive: gamedata.zip
+SHA256: 23a472066e38dc4647b01471e2216080057ac0ed6e92f431f6f08324ebae749e
+Files in archive: 1881
+Top-level entries observed:
+- ai/
+- anims/
+- config/
+- scripts/
+- shaders/
+- lanims.xr
+- particles.xr
+- shaders.xr
+- shaders_xrlc.xr
+
+Policy:
+- This archive is the reference baseline for future gamedata edits.
+- Never publish or copy the full baseline into RC6 release artifacts.
+- For any game-data change, start from the matching baseline file, apply only the required delta, and place only the modified output under release/gamedata-overlay/ preserving its original relative path.
+- GAMEDATA_OVERLAY_MANIFEST.txt must enumerate every shipped overlay file and no unchanged baseline file may be included.
