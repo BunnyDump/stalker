@@ -28,9 +28,6 @@ def preprocess_text(text: str) -> str:
 
     text = INCLUDE_RE.sub(normalize_include, text)
     text = RESERVED_POINT_RE.sub("xr_point", text)
-    # DX9 HLSL accepted an implicit float4 -> float2 truncation in the bloom
-    # sample helper calls. SPIR-V HLSL frontends require the intended XY
-    # coordinate to be explicit.
     text = LEGACY_SAMPLE_FLOAT4_RE.sub(r"sample(\1.xy)", text)
     return text
 
@@ -38,6 +35,11 @@ def preprocess_text(text: str) -> str:
 def preprocess_file(src: Path, dst: Path) -> None:
     text = decode_legacy_shader(src.read_bytes())
     text = preprocess_text(text)
+    lower_name = src.name.lower()
+    if lower_name in {"bloom_luminance_2.ps", "bloom_luminance_3.ps"}:
+        # DX9 accepted scalar replication for the second dot() operand.
+        # Make the intended 0.25-per-component weight explicit for SPIR-V HLSL.
+        text = text.replace("1/4.h", "half4(0.25h,0.25h,0.25h,0.25h)")
     if src.suffix.lower() in {".vs", ".ps"}:
         text = LOD_COMPAT + text
     dst.parent.mkdir(parents=True, exist_ok=True)
