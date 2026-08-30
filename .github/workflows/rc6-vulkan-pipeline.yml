@@ -112,6 +112,20 @@ jobs:
             exit $exit
           }
 
+      - name: Stage cumulative gamedata
+        if: success()
+        shell: pwsh
+        run: |
+          python "$env:GITHUB_WORKSPACE\tools\stage_rc6_release_gamedata.py" --workspace "$env:GITHUB_WORKSPACE" --source "$env:GITHUB_WORKSPACE\source" --ready "$env:GITHUB_WORKSPACE\READY_RC6_X64_VULKAN"
+          if ($LASTEXITCODE -ne 0) { throw 'Cumulative gamedata staging failed.' }
+
+      - name: Validate RC6 release payload
+        if: success()
+        shell: pwsh
+        run: |
+          python "$env:GITHUB_WORKSPACE\tools\validate_rc6_release_payload.py" --ready "$env:GITHUB_WORKSPACE\READY_RC6_X64_VULKAN"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 bin/gamedata release validation failed.' }
+
       - name: Upload pipeline artifact
         if: success()
         uses: actions/upload-artifact@v4
