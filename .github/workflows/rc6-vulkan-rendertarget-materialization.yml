@@ -2,7 +2,7 @@ name: RC6 Vulkan RenderTarget Materialization
 
 on:
   push:
-    branches: [xray-rc6-vulkan-rendertarget-fvf, xray-rc6-vulkan-rendertarget-state, xray-rc6-vulkan-rendertarget-textures]
+    branches: [xray-rc6-vulkan-rendertarget-fvf, xray-rc6-vulkan-rendertarget-state, xray-rc6-vulkan-rendertarget-textures, xray-rc6-vulkan-rendertarget-surface-lifetime]
   workflow_dispatch:
 
 permissions:
@@ -67,6 +67,8 @@ jobs:
           grep -q 'xr_rt_legacy_fvf' "$rt"
           grep -q 'xr_rt_legacy_build_material_lookup' "$rt"
           grep -q 'xr_rt_legacy_build_jitter_textures' "$rt"
+          grep -q 'xr_rt_legacy_create_shadow_depth_surface' "$rt"
+          grep -q 'xr_rt_legacy_release_surface' "$rt"
           python tools/audit_vulkan_rendertarget_policy.py source --json rendertarget-policy-audit.json
           python tools/audit_vulkan_renderer.py source --json rendertarget-materialization-audit.json --top 100
 
@@ -85,6 +87,24 @@ jobs:
           leaked = [token for token in forbidden if token in policy]
           if leaked:
               raise SystemExit(f'procedural texture backend details leaked into policy: {leaked}')
+          PY
+
+      - name: Validate shadow surface lifetime boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('source/xr_3da/xrRender_VK/r2_rendertarget.cpp')
+          text = p.read_text(encoding='utf-8')
+          ctor_start = text.index('CRenderTarget::CRenderTarget()')
+          dtor_start = text.index('CRenderTarget::~CRenderTarget()')
+          ctor = text[ctor_start:dtor_start]
+          dtor = text[dtor_start:]
+          if 'CreateDepthStencilSurface' in ctor:
+              raise SystemExit('direct depth surface creation remains in render-target constructor policy')
+          if '_RELEASE(rt_smap_ZB)' in dtor:
+              raise SystemExit('direct shadow depth surface release remains in render-target destructor policy')
           PY
 
       - name: Upload audit
