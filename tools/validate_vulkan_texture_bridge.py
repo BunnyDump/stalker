@@ -16,6 +16,7 @@ def validate(root: Path) -> None:
         "struct xr_vk_texture_resource",
         "u32 xr_vk_max_mip_levels(u32 width, u32 height)",
         "void xr_vk_mip_extent(const xr_vk_texture_resource& texture, u32 mip_level, u32& width, u32& height)",
+        "bool xr_vk_texture_block_info(VkFormat format, u32& block_width, u32& block_height, u32& block_bytes)",
         "mip_levels > xr_vk_max_mip_levels(width, height)",
         "VkFormat xr_vk_d3d_texture_format",
         "D3DFMT_A8R8G8B8", "VK_FORMAT_B8G8R8A8_UNORM",
@@ -23,6 +24,10 @@ def validate(root: Path) -> None:
         "D3DFMT_DXT1", "VK_FORMAT_BC1_RGBA_UNORM_BLOCK",
         "D3DFMT_DXT3", "VK_FORMAT_BC2_UNORM_BLOCK",
         "D3DFMT_DXT5", "VK_FORMAT_BC3_UNORM_BLOCK",
+        "block_width = 4",
+        "block_height = 4",
+        "block_bytes = 8",
+        "block_bytes = 16",
         "VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT",
         "bool xr_vk_create_texture_2d",
         "VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT",
@@ -34,6 +39,10 @@ def validate(root: Path) -> None:
         "bool xr_vk_copy_buffer_to_texture",
         "xr_vk_mip_extent(texture, mip_level, mip_width, mip_height)",
         "width > mip_width || height > mip_height",
+        "xr_vk_texture_block_info(texture.format, block_width, block_height, block_bytes)",
+        "staging_offset % block_bytes",
+        "width != mip_width && (width % block_width) != 0",
+        "height != mip_height && (height % block_height) != 0",
         "g_vkCmdCopyBufferToImage(command_buffer, staging_buffer, texture.image",
         "bool xr_vk_allocate_texture_material",
         "texture.layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL",
@@ -49,13 +58,19 @@ def validate(root: Path) -> None:
     if min(transition_pos, copy_pos, material_pos) < 0 or not transition_pos < copy_pos < material_pos:
         raise RuntimeError("Vulkan texture bridge validation failed: helper ordering is inconsistent")
 
-    copy_end = material_pos
-    copy_body = text[copy_pos:copy_end]
-    extent_pos = copy_body.find("xr_vk_mip_extent(texture, mip_level, mip_width, mip_height)")
-    bounds_pos = copy_body.find("width > mip_width || height > mip_height")
-    vk_copy_pos = copy_body.find("g_vkCmdCopyBufferToImage")
-    if min(extent_pos, bounds_pos, vk_copy_pos) < 0 or not extent_pos < bounds_pos < vk_copy_pos:
-        raise RuntimeError("Vulkan texture bridge validation failed: mip extent must be checked before copy recording")
+    copy_body = text[copy_pos:material_pos]
+    ordered = (
+        "xr_vk_mip_extent(texture, mip_level, mip_width, mip_height)",
+        "width > mip_width || height > mip_height",
+        "xr_vk_texture_block_info(texture.format, block_width, block_height, block_bytes)",
+        "staging_offset % block_bytes",
+        "width != mip_width && (width % block_width) != 0",
+        "height != mip_height && (height % block_height) != 0",
+        "g_vkCmdCopyBufferToImage",
+    )
+    positions = [copy_body.find(token) for token in ordered]
+    if any(pos < 0 for pos in positions) or positions != sorted(positions):
+        raise RuntimeError("Vulkan texture bridge validation failed: mip/block validation must precede copy recording")
 
     create_pos = text.find("bool xr_vk_create_texture_2d")
     transition_pos = text.find("bool xr_vk_transition_texture", create_pos)
@@ -74,7 +89,7 @@ def validate(root: Path) -> None:
         if token in text:
             raise RuntimeError(f"Vulkan texture bridge validation failed: unsafe token present: {token}")
 
-    print("[vulkan-textures] bounded mip chain + per-mip copy extent + texture format/upload/descriptor bridge verified")
+    print("[vulkan-textures] bounded mip chain + BC texel-block alignment + per-mip copy extent + texture upload/descriptor bridge verified")
 
 
 def main() -> int:
