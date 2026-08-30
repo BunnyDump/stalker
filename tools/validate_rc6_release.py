@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a complete RC6 x64/Vulkan distribution (engine + gamedata)."""
+"""Validate an RC6 x64/Vulkan distribution with sparse gamedata overlays."""
 
 from __future__ import annotations
 
@@ -14,11 +14,6 @@ REQUIRED_BINARIES = (
     "xrCore.dll",
     "xrRender_VK.dll",
 )
-REQUIRED_GAMEDATA_DIRS = (
-    "config",
-    "textures",
-)
-MIN_GAMEDATA_FILES = 100
 
 
 def pe_machine(path: Path) -> int:
@@ -43,16 +38,30 @@ def fail(message: str) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
 
 
+def parse_overlay_manifest(path: Path) -> set[str]:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    try:
+        marker = lines.index("Files:")
+    except ValueError as exc:
+        raise ValueError("missing Files: section") from exc
+    files = [line.strip().replace("\\", "/") for line in lines[marker + 1 :] if line.strip()]
+    if files == ["(none)"]:
+        return set()
+    if "(none)" in files:
+        raise ValueError("(none) cannot be mixed with file entries")
+    return set(files)
+
+
 def validate(root: Path) -> int:
     errors = 0
     bin_dir = root / "bin"
     gamedata_dir = root / "gamedata"
+    overlay_manifest = root / "GAMEDATA_OVERLAY_MANIFEST.txt"
 
     if not bin_dir.is_dir():
         fail(f"missing bin directory: {bin_dir}")
-        errors += 1
-    if not gamedata_dir.is_dir():
-        fail(f"missing gamedata directory: {gamedata_dir}")
         errors += 1
 
     for name in REQUIRED_BINARIES:
@@ -73,33 +82,53 @@ def validate(root: Path) -> int:
         else:
             print(f"OK: {name} is AMD64")
 
-    for name in REQUIRED_GAMEDATA_DIRS:
-        path = gamedata_dir / name
-        if not path.is_dir():
-            fail(f"missing required gamedata directory: {path}")
+    if bin_dir.is_dir() and (bin_dir / "OpenAL32.dll").is_file():
+        if not (bin_dir / "fmt.dll").is_file():
+            fail("OpenAL32.dll is present but fmt.dll is missing")
             errors += 1
+        else:
+            print("OK: OpenAL runtime closure contains fmt.dll")
 
+    try:
+        declared = parse_overlay_manifest(overlay_manifest)
+    except (OSError, ValueError) as exc:
+        fail(f"invalid sparse gamedata manifest: {exc}")
+        declared = set()
+        errors += 1
+
+    actual: set[str] = set()
     if gamedata_dir.is_dir():
-        gamedata_files = sum(1 for path in gamedata_dir.rglob("*") if path.is_file())
-        print(f"gamedata files: {gamedata_files}")
-        if gamedata_files < MIN_GAMEDATA_FILES:
-            fail(
-                f"gamedata is suspiciously incomplete: {gamedata_files} files "
-                f"(< {MIN_GAMEDATA_FILES})"
-            )
-            errors += 1
+        actual = {
+            path.relative_to(gamedata_dir).as_posix()
+            for path in gamedata_dir.rglob("*")
+            if path.is_file()
+        }
+
+    unexpected = sorted(actual - declared)
+    missing = sorted(declared - actual)
+    if unexpected:
+        fail("gamedata contains files not declared as integration changes: " + ", ".join(unexpected))
+        errors += 1
+    if missing:
+        fail("declared gamedata overlay files are missing: " + ", ".join(missing))
+        errors += 1
+    if not declared and gamedata_dir.exists() and not actual:
+        fail("empty gamedata directory should not be shipped when no overlay files are changed")
+        errors += 1
+
+    print(f"sparse gamedata overlay files: {len(actual)}")
 
     if errors:
         fail(f"RC6 release validation failed with {errors} problem(s)")
         return 1
 
-    print("RC6 release validation passed: x64 engine + Vulkan renderer + gamedata present.")
+    print("RC6 release validation passed: x64 Vulkan engine + runtime closure + sparse gamedata policy.")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("root", type=Path, help="Root directory containing bin/ and gamedata/")
+    parser.add_argument("root", type=Path, help="Root directory containing bin/ and optional sparse gamedata/")
     args = parser.parse_args()
     return validate(args.root.resolve())
 
