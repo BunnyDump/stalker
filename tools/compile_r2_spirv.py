@@ -9,6 +9,8 @@ from pathlib import Path
 from prepare_r2_hlsl_for_spirv import preprocess_tree
 
 ENTRYPOINT_RE = re.compile(r"\b(main(?:_[A-Za-z0-9_]+)?)\s*\(")
+BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+LINE_COMMENT_RE = re.compile(r"//[^\n]*")
 SKIN_MACROS = ("SKIN_NONE", "SKIN_0", "SKIN_1", "SKIN_2")
 
 
@@ -29,8 +31,15 @@ def compiler_command(compiler: Path, src: Path, out: Path, include_dir: Path, st
     return cmd
 
 
-def detect_entrypoint(path: Path) -> str | None:
+def active_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="replace")
+    text = BLOCK_COMMENT_RE.sub("", text)
+    text = LINE_COMMENT_RE.sub("", text)
+    return text
+
+
+def detect_entrypoint(path: Path) -> str | None:
+    text = active_text(path)
     matches = ENTRYPOINT_RE.findall(text)
     if not matches:
         return None
@@ -40,7 +49,7 @@ def detect_entrypoint(path: Path) -> str | None:
 
 
 def detect_variants(path: Path) -> list[tuple[str, tuple[str, ...]]]:
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = active_text(path)
     skins = [macro for macro in SKIN_MACROS if re.search(rf"\b{macro}\b", text)]
     if skins:
         return [(macro.lower(), (macro,)) for macro in skins]
