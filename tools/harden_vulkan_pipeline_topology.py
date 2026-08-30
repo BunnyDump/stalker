@@ -11,19 +11,27 @@ def harden(root: Path) -> None:
 
     text = source.read_text(encoding="utf-8")
 
-    old_sig = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+    legacy_sig = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
         const void* ps_data, size_t ps_size, const char* ps_entry,
         const xr_vk_vertex_input_layout* vertex_layout)
 '''
-    new_sig = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+    topology_sig = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
+        const void* ps_data, size_t ps_size, const char* ps_entry,
+        const xr_vk_vertex_input_layout* vertex_layout, VkPrimitiveTopology topology)
+'''
+    hardened_sig = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
         const void* ps_data, size_t ps_size, const char* ps_entry,
         const xr_vk_vertex_input_layout* vertex_layout,
         VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
 '''
-    if "VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST" not in text:
-        if old_sig not in text:
+
+    if hardened_sig not in text:
+        if topology_sig in text:
+            text = text.replace(topology_sig, hardened_sig, 1)
+        elif legacy_sig in text:
+            text = text.replace(legacy_sig, hardened_sig, 1)
+        elif "VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST" not in text:
             raise RuntimeError("Vulkan pipeline topology: graphics-pipeline signature marker not found")
-        text = text.replace(old_sig, new_sig, 1)
 
     old_guard = '''        if (g_render_pass == VK_NULL_HANDLE || g_pipeline_layout == VK_NULL_HANDLE ||
             !vs_entry || !ps_entry || !g_vkCreateGraphicsPipelines)
@@ -34,7 +42,7 @@ def harden(root: Path) -> None:
             topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM)
             return VK_NULL_HANDLE;
 '''
-    if "topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM" not in text:
+    if "topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM" not in text and "topology < VK_PRIMITIVE_TOPOLOGY_POINT_LIST" not in text:
         if old_guard not in text:
             raise RuntimeError("Vulkan pipeline topology: factory guard marker not found")
         text = text.replace(old_guard, new_guard, 1)
@@ -51,13 +59,14 @@ def harden(root: Path) -> None:
 
     required = (
         "VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST",
-        "topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM",
         "input_assembly.topology = topology;",
         "xr_vk_d3d_primitive_to_topology",
     )
     for token in required:
         if token not in final:
             raise RuntimeError(f"Vulkan pipeline topology validation failed: missing {token}")
+    if "topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM" not in final and "topology < VK_PRIMITIVE_TOPOLOGY_POINT_LIST" not in final:
+        raise RuntimeError("Vulkan pipeline topology validation failed: fail-closed topology guard missing")
 
     factory_start = final.find("VkPipeline xr_vk_create_graphics_pipeline")
     factory_end = final.find("bool xr_vk_create_render_core()", factory_start)
@@ -67,11 +76,11 @@ def harden(root: Path) -> None:
     if "input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;" in factory:
         raise RuntimeError("Vulkan pipeline topology validation failed: hard-coded triangle-list assignment remains")
 
-    print("[vulkan-pipeline-topology] graphics pipeline factory now accepts validated per-draw VkPrimitiveTopology")
+    print("[vulkan-pipeline-topology] topology-aware pipeline factory is idempotent with the SGeometry adapter")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Make RC6 Vulkan graphics pipeline creation topology-aware while preserving legacy callers.")
+    parser = argparse.ArgumentParser(description="Harden RC6 Vulkan graphics pipeline creation after SGeometry topology translation.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
