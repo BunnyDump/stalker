@@ -13,6 +13,7 @@ from enable_vulkan_renderpass_frame import install_renderpass_frame
 from enable_vulkan_dynamic_state import install_dynamic_state
 from enable_vulkan_draw_commands import install_draw_commands
 from enable_vulkan_geometry_bridge import install_geometry_bridge
+from harden_vulkan_pipeline_topology import harden as harden_vulkan_pipeline_topology
 from enable_vulkan_sgeometry_adapter import install_sgeometry_adapter
 from enable_vulkan_stream_mirror import install_stream_mirror
 from harden_vulkan_stream_lifetime import harden as harden_vulkan_stream_lifetime
@@ -114,6 +115,7 @@ def harden(root: Path) -> None:
     install_dynamic_state(root)
     install_draw_commands(root)
     install_geometry_bridge(root)
+    harden_vulkan_pipeline_topology(root)
     install_sgeometry_adapter(root)
     install_stream_mirror(root)
     harden_vulkan_stream_lifetime(root)
@@ -145,7 +147,7 @@ def harden(root: Path) -> None:
     validate_vulkan_texture_bridge(root)
     validate_vulkan_uniform_stream(root)
     validate_vulkan_pipeline_generation(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + R2 Render-scoped begin/end render-pass recording + active command buffer + backend active-frame gating + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + topology-correct indexed draw packets + live CBackend renderer dispatch with release-safe VS/PS identity and fail-closed D3D fallback + 8192-set descriptor capacity + persistent material/device resources across resize + exact oldSwapchain retirement boundary + clean recovery + swapchain format continuity + render-pass generation-owned graphics pipelines + stale draw rejection + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + R2 Render-scoped begin/end render-pass recording + active command buffer + backend active-frame gating + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + topology-correct indexed draw packets + live CBackend renderer dispatch with release-safe VS/PS identity and fail-closed D3D fallback + 8192-set descriptor capacity + persistent material/device resources across resize + exact oldSwapchain retirement boundary + clean recovery + swapchain format continuity + render-pass generation-owned graphics pipelines + stale draw rejection + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
 
 
 def main() -> int:
