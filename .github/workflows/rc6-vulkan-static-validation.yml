@@ -105,6 +105,7 @@ jobs:
           python tools/validate_vulkan_material_descriptors.py source
           python tools/validate_vulkan_texture_bridge.py source
           python tools/validate_vulkan_uniform_stream.py source
+          python tools/validate_vulkan_transactional_swapchain.py source
 
       - name: Verify materialized renderer contract
         shell: bash
@@ -138,6 +139,10 @@ jobs:
           grep -Fq 'void xr_vk_destroy_swapchain_resources()' "$vk"
           grep -Fq 'g_descriptor_pool == VK_NULL_HANDLE' "$vk"
           grep -Fq 'g_uniform_buffer == VK_NULL_HANDLE' "$vk"
+          grep -Fq 'info.oldSwapchain = old_swapchain;' "$vk"
+          grep -Fq 'bool xr_vk_transactional_recreate_swapchain(unsigned width, unsigned height)' "$vk"
+          grep -Fq 'xr_vk_restore_swapchain_state(old_state);' "$vk"
+          grep -Fq 'xr_vk_restore_swapchain_state(new_state);' "$vk"
 
           python - <<'PY'
           from pathlib import Path
@@ -168,11 +173,15 @@ jobs:
           frame_start = text.index('bool xr_vk_bootstrap_frame()', resize_start)
           resize_and_recreate = text[resize_start:frame_start]
           zero_guard = resize_and_recreate.index('if (!width || !height)')
-          partial_destroy = resize_and_recreate.index('xr_vk_destroy_swapchain_resources()')
-          if not zero_guard < partial_destroy:
-              raise SystemExit('Minimized zero-extent swapchain is destroyed prematurely')
+          transaction = resize_and_recreate.index('xr_vk_transactional_recreate_swapchain(width, height)')
+          if not zero_guard < transaction:
+              raise SystemExit('Minimized zero-extent swapchain recreation is attempted prematurely')
+          if resize_and_recreate.count('xr_vk_transactional_recreate_swapchain(width, height)') < 2:
+              raise SystemExit('Not all resize paths use transactional swapchain recreation')
           if 'xr_vk_destroy_frame_resources();' in resize_and_recreate:
               raise SystemExit('Resize invalidates persistent Vulkan material/device resources')
+          if 'xr_vk_destroy_swapchain_resources();\n    return xr_vk_create_swapchain(width, height);' in resize_and_recreate:
+              raise SystemExit('Legacy destructive swapchain recreation path remains')
 
           partial_start = text.index('void xr_vk_destroy_swapchain_resources()')
           full_start = text.index('void xr_vk_destroy_frame_resources()', partial_start)
@@ -183,6 +192,17 @@ jobs:
               'g_stream_vertex_buffer', 'g_stream_index_buffer'):
               if forbidden in partial:
                   raise SystemExit(f'Swapchain teardown incorrectly owns persistent resource: {forbidden}')
+
+          tx_start = text.index('bool xr_vk_transactional_recreate_swapchain(unsigned width, unsigned height)')
+          tx_end = resize_start
+          tx = text[tx_start:tx_end]
+          create_new = tx.index('xr_vk_create_swapchain(width, height, old_state.swapchain)')
+          rollback = tx.index('xr_vk_restore_swapchain_state(old_state);', create_new)
+          capture_new = tx.index('new_state = xr_vk_capture_swapchain_state()', rollback)
+          destroy_old = tx.index('xr_vk_destroy_swapchain_resources();', capture_new)
+          restore_new = tx.index('xr_vk_restore_swapchain_state(new_state);', destroy_old)
+          if not create_new < rollback < capture_new < destroy_old < restore_new:
+              raise SystemExit('Transactional swapchain rollback/commit ordering is unsafe')
 
           destroy_start = full_start
           destroy_end = text.index('void xr_vk_destroy_window_runtime()', destroy_start)
