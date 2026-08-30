@@ -30,12 +30,12 @@ def main() -> int:
         (workspace / "release" / "gamedata-overlay" / "config" / "changed.ltx").write_text("changed=true\n")
         (ready / "bin").mkdir(parents=True)
 
-        for name in ("XR_3DA.exe", "xrCore.dll", "xrRender_VK.dll", "OpenAL32.dll"):
+        for name in ("XR_3DA.exe", "xrCore.dll", "xrRender_VK.dll"):
             write_fake_pe(ready / "bin" / name)
 
-        vcpkg_bin = root / "xray-rc6-vcpkg" / "installed-openal" / "x64-windows" / "bin"
+        vcpkg_bin = root / "xray-rc6-vcpkg" / "installed-openal" / "xray-openal-static-crt" / "bin"
         vcpkg_bin.mkdir(parents=True)
-        write_fake_pe(vcpkg_bin / "fmt.dll")
+        write_fake_pe(vcpkg_bin / "OpenAL32.dll")
 
         vc_redist = root / "vc-redist"
         vc_crt = vc_redist / "x64" / "Microsoft.VC143.CRT"
@@ -59,7 +59,8 @@ def main() -> int:
             else:
                 os.environ["VCToolsRedistDir"] = old_redist
 
-        assert (ready / "bin" / "fmt.dll").is_file(), "fmt.dll runtime closure was not staged"
+        assert (ready / "bin" / "OpenAL32.dll").is_file(), "static-CRT OpenAL32.dll was not staged"
+        assert not (ready / "bin" / "fmt.dll").exists(), "bundled-fmt OpenAL must not require staged fmt.dll"
         assert (ready / "bin" / "MSVCP140.dll").is_file(), "MSVCP140.dll VC runtime was not staged"
         assert (ready / "bin" / "VCRUNTIME140.dll").is_file(), "VCRUNTIME140.dll VC runtime was not staged"
         assert (ready / "gamedata" / "config" / "changed.ltx").is_file()
@@ -67,7 +68,7 @@ def main() -> int:
         declared = parse_overlay_manifest(ready / "GAMEDATA_OVERLAY_MANIFEST.txt")
         assert declared == {"config/changed.ltx"}, declared
 
-    print("[release-policy-test] sparse gamedata + OpenAL/fmt + VC runtime staging verified")
+    print("[release-policy-test] sparse gamedata + self-contained OpenAL + VC runtime staging verified")
     return 0
 
 
