@@ -2,7 +2,7 @@ name: RC6 Vulkan RenderTarget Materialization
 
 on:
   push:
-    branches: [xray-rc6-vulkan-rendertarget-fvf]
+    branches: [xray-rc6-vulkan-rendertarget-fvf, xray-rc6-vulkan-rendertarget-state]
   workflow_dispatch:
 
 permissions:
