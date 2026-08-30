@@ -7,6 +7,7 @@ from pathlib import Path
 TECHNIQUE_RE = re.compile(r"^\s*(?:FXVS|FXPS)\s*;?\s*$", re.MULTILINE)
 INCLUDE_RE = re.compile(r'(^\s*#\s*include\s*[<\"])([^>\"]+)([>\"])', re.MULTILINE)
 RESERVED_POINT_RE = re.compile(r"\bpoint\b")
+LEGACY_SAMPLE_FLOAT4_RE = re.compile(r"\bsample\((I\.tc\d+)\)")
 LOD_COMPAT = """#define tex2Dlod(s,c) tex2D(s,(c).xy)\n#define tex3Dlod(s,c) tex3D(s,(c).xyz)\n#define texCUBElod(s,c) texCUBE(s,(c).xyz)\n"""
 
 
@@ -27,6 +28,10 @@ def preprocess_text(text: str) -> str:
 
     text = INCLUDE_RE.sub(normalize_include, text)
     text = RESERVED_POINT_RE.sub("xr_point", text)
+    # DX9 HLSL accepted an implicit float4 -> float2 truncation in the bloom
+    # sample helper calls. SPIR-V HLSL frontends require the intended XY
+    # coordinate to be explicit.
+    text = LEGACY_SAMPLE_FLOAT4_RE.sub(r"sample(\1.xy)", text)
     return text
 
 
@@ -34,9 +39,6 @@ def preprocess_file(src: Path, dst: Path) -> None:
     text = decode_legacy_shader(src.read_bytes())
     text = preprocess_text(text)
     if src.suffix.lower() in {".vs", ".ps"}:
-        # glslang cannot lower several DX9 combined-sampler explicit-LOD
-        # intrinsics. R2 uses these compatibility calls with zero LOD; map them
-        # to the equivalent legacy sample using the spatial coordinate portion.
         text = LOD_COMPAT + text
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(text, encoding="utf-8")
