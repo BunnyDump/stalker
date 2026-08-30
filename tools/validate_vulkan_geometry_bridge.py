@@ -15,6 +15,7 @@ def validate(root: Path) -> None:
         "VkVertexInputBindingDescription bindings[1]",
         "VkVertexInputAttributeDescription attributes[MAX_FVF_DECL_SIZE]",
         "VkFormat xr_vk_d3d_decl_type_to_format",
+        "u32 xr_vk_d3d_decl_type_size",
         "D3DDECLTYPE_FLOAT1",
         "D3DDECLTYPE_FLOAT2",
         "D3DDECLTYPE_FLOAT3",
@@ -24,8 +25,12 @@ def validate(root: Path) -> None:
         "D3DDECLTYPE_SHORT4N",
         "D3DDECLTYPE_FLOAT16_4",
         "bool xr_vk_build_vertex_input_layout",
+        "u32 decl_count",
+        "decl_count > MAX_FVF_DECL_SIZE",
         "element.Stream != 0",
         "element.Method != D3DDECLMETHOD_DEFAULT",
+        "static_cast<u32>(element.Offset) + element_size > stride",
+        "return terminated && out.attribute_count != 0",
         "attribute.location = out.attribute_count",
         "attribute.offset = element.Offset",
         "const xr_vk_vertex_input_layout* vertex_layout",
@@ -51,8 +56,9 @@ def validate(root: Path) -> None:
         "element_count = primitive_count + 2",
         "bool xr_vk_build_sgeometry_layout",
         "geometry->dcl._get()",
-        "declaration->dcl_code.empty()",
-        "&declaration->dcl_code[0]",
+        "declaration_count = static_cast<u32>(declaration->dcl_code.size())",
+        "declaration_count > MAX_FVF_DECL_SIZE",
+        "&declaration->dcl_code[0], declaration_count",
         "geometry->vb_stride",
         "const xr_vk_vertex_input_layout* vertex_layout, VkPrimitiveTopology topology",
         "input_assembly.topology = topology",
@@ -65,10 +71,11 @@ def validate(root: Path) -> None:
         "vertex_input.vertexBindingDescriptionCount = 0;",
         "vertex_input.vertexAttributeDescriptionCount = 0;",
         "input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;",
+        "for (u32 i = 0; i < MAX_FVF_DECL_SIZE; ++i)",
     )
     for token in forbidden:
         if token in text:
-            raise RuntimeError(f"Vulkan geometry bridge validation failed: stale fixed state {token}")
+            raise RuntimeError(f"Vulkan geometry bridge validation failed: stale or unbounded state {token}")
 
     build_pos = text.find("bool xr_vk_build_vertex_input_layout")
     topology_pos = text.find("bool xr_vk_d3d_primitive_to_topology")
@@ -84,7 +91,7 @@ def validate(root: Path) -> None:
     if not (build_pos < topology_pos < index_pos < count_pos < sgeometry_pos < pipeline_pos < vertex_state_pos < topology_state_pos < graphics_info_pos):
         raise RuntimeError("Vulkan geometry bridge validation failed: materialized section order is inconsistent")
 
-    print("[vulkan-geometry-check] D3D9 declaration + SGeometry + topology + indexed draw metadata wiring verified")
+    print("[vulkan-geometry-check] bounded D3D9 declaration + SGeometry + topology + indexed draw metadata wiring verified")
 
 
 def main() -> int:
