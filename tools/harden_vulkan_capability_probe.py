@@ -13,6 +13,7 @@ from enable_vulkan_dynamic_state import install_dynamic_state
 from enable_vulkan_draw_commands import install_draw_commands
 from enable_vulkan_geometry_bridge import install_geometry_bridge
 from enable_vulkan_sgeometry_adapter import install_sgeometry_adapter
+from enable_vulkan_stream_mirror import install_stream_mirror
 from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 from validate_vulkan_geometry_bridge import validate as validate_vulkan_geometry_bridge
 
@@ -85,9 +86,10 @@ def harden(root: Path) -> None:
     install_draw_commands(root)
     install_geometry_bridge(root)
     install_sgeometry_adapter(root)
+    install_stream_mirror(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter verified")
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + SPIR-V pipeline + render-pass frame + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + dynamic vertex/index stream mirrors verified")
 
 
 def main() -> int:
