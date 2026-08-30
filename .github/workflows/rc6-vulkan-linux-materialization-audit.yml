@@ -1,0 +1,81 @@
+name: RC6 Vulkan Linux Materialization Audit
+
+on:
+  push:
+    branches: [xray-rc6-vulkan-r2-capabilities]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-vulkan-linux-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Linux Vulkan Materialization Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout integration repo
+        uses: actions/checkout@v4
+
+      - name: Reconstruct RC6 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat patches/rc6_ci_bin.part* > /tmp/RC6_CI_COMPACT.patch.xz
+          actual=$(sha256sum /tmp/RC6_CI_COMPACT.patch.xz | awk '{print $1}')
+          test "$actual" = "a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482"
+          xz -dc /tmp/RC6_CI_COMPACT.patch.xz > /tmp/RC6_CI_COMPACT.patch
+
+      - name: Clone pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
+          git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
+
+      - name: Materialize Vulkan stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a source/xr_3da/xrRender_R2 source/xr_3da/xrRender_VK
+          git -C source apply --check /tmp/RC6_CI_COMPACT.patch
+          git -C source apply /tmp/RC6_CI_COMPACT.patch
+          git -C source apply patches/rc6-vcpkg-manifest-fix.patch
+          git -C source apply patches/rc6-vcpkg-baseline-fix.patch
+          python tools/fix_x64_item_metadata.py source
+          python tools/fix_legacy_stl.py source
+          python tools/fix_x64_abi.py source
+          python tools/fix_x64_runtime_compat.py source
+
+      - name: Validate decoupled hotspots
+        shell: bash
+        run: |
+          set -euo pipefail
+          sun=source/xr_3da/xrRender_VK/r2_R_sun.cpp
+          core=source/xr_3da/xrRender_VK/r2.cpp
+          grep -q 'XrSunMatrix' "$sun"
+          ! grep -Eq 'D3DX|IDirect3D|D3DFMT_|D3DCMP_|D3DPT_' "$sun"
+          grep -q 'native capability policy active' "$core"
+          ! grep -Fq 'HW.support(' "$core"
+          grep -q 'XrSunVec3 operator/(float s)' "$sun"
+          grep -q 'xr_vk_destroy_texture_object(XrVkTexture& texture);' source/xr_3da/xrRender_VK/vk_bootstrap.cpp
+
+      - name: Quantify D3D coupling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/audit_vulkan_renderer.py source --json vulkan-d3d-audit-after-capabilities.json --top 100 | tee vulkan-d3d-audit-after-capabilities.txt
+
+      - name: Upload materialization audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC6_VULKAN_LINUX_MATERIALIZATION_AUDIT
+          path: |
+            vulkan-d3d-audit-after-capabilities.json
+            vulkan-d3d-audit-after-capabilities.txt
+          if-no-files-found: error
+          retention-days: 14
