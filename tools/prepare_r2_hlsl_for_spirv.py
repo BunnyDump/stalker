@@ -18,13 +18,8 @@ def decode_legacy_shader(data: bytes) -> str:
 
 
 def preprocess_text(text: str) -> str:
-    # X-Ray's legacy .vs/.ps files may terminate in FXVS/FXPS macros which expand
-    # to D3D9 effect techniques. Vulkan consumes only the HLSL entry point.
     text = TECHNIQUE_RE.sub("", text)
 
-    # Legacy R2 headers use Windows path separators inside #include strings.
-    # glslang on Linux parses backslashes as string escapes, so normalize only
-    # include paths while preserving shader source semantics.
     def normalize_include(match: re.Match[str]) -> str:
         return match.group(1) + match.group(2).replace("\\", "/") + match.group(3)
 
@@ -34,6 +29,13 @@ def preprocess_text(text: str) -> str:
 def preprocess_file(src: Path, dst: Path) -> None:
     text = decode_legacy_shader(src.read_bytes())
     text = preprocess_text(text)
+
+    # glslang reserves `point` as a geometry primitive token while the legacy
+    # R2 lighting header uses it as a function parameter. Rename only this
+    # compatibility hotspot, preserving the shader's arithmetic exactly.
+    if src.name.lower() == "lmodel.h":
+        text = re.sub(r"\bpoint\b", "point_pos", text)
+
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(text, encoding="utf-8")
 
