@@ -102,6 +102,9 @@ jobs:
           grep -Fq 'xr_vk_texture_block_info' "$vk"
           grep -Fq 'staging_offset % block_bytes' "$vk"
           grep -Fq 'xr_vk_allocate_texture_material' "$vk"
+          grep -Fq 'xr_vk_deferred_texture_queue' "$vk"
+          grep -Fq 'xr_vk_release_texture_material' "$vk"
+          grep -Fq 'xr_vk_collect_deferred_textures();' "$vk"
           grep -Fq 'xr_vk_restore_signaled_frame_fence' "$vk"
           grep -Fq 'presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR' "$vk"
           grep -Fq 'bool xr_vk_recreate_swapchain_from_window()' "$vk"
@@ -117,11 +120,13 @@ jobs:
           start = text.index('bool xr_vk_bootstrap_frame()')
           end = text.index('bool xr_vk_bootstrap_runtime_ready()', start)
           frame = text[start:end]
+          wait_fence = frame.index('g_vkWaitForFences')
+          collect_textures = frame.index('xr_vk_collect_deferred_textures()', wait_fence)
           reset_cmd = frame.index('g_vkResetCommandBuffer')
           reset_fence = frame.index('g_vkResetFences')
           submit = frame.index('g_vkQueueSubmit')
-          if not reset_cmd < reset_fence < submit:
-              raise SystemExit('Unsafe Vulkan fence reset order')
+          if not wait_fence < collect_textures < reset_cmd < reset_fence < submit:
+              raise SystemExit('Unsafe Vulkan fence/texture-release/submit order')
           present = frame.index('VkResult presented = g_vkQueuePresentKHR')
           guard = frame.index('presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR', present)
           commit = frame.index('g_image_initialized[image_index] = 1', present)
@@ -140,6 +145,13 @@ jobs:
           destroy = resize.index('xr_vk_destroy_frame_resources()')
           if not zero_guard < destroy:
               raise SystemExit('Minimized zero-extent swapchain is destroyed prematurely')
+          destroy_start = text.index('void xr_vk_destroy_frame_resources()')
+          destroy_end = text.index('void xr_vk_destroy_window_runtime()', destroy_start)
+          destroy_frame = text[destroy_start:destroy_end]
+          idle = destroy_frame.index('g_vkDeviceWaitIdle')
+          collect_shutdown = destroy_frame.index('xr_vk_collect_deferred_textures()', idle)
+          if not idle < collect_shutdown:
+              raise SystemExit('Deferred textures are not collected after device idle during shutdown')
           PY
 
           echo 'Static RC6 Vulkan materialization contract passed.'
