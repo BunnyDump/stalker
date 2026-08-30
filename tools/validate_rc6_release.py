@@ -8,6 +8,8 @@ import struct
 import sys
 from pathlib import Path
 
+from validate_windows_runtime_dependencies import validate_bin as validate_runtime_bin
+
 IMAGE_FILE_MACHINE_AMD64 = 0x8664
 REQUIRED_BINARIES = (
     "XR_3DA.exe",
@@ -82,12 +84,11 @@ def validate(root: Path) -> int:
         else:
             print(f"OK: {name} is AMD64")
 
-    if bin_dir.is_dir() and (bin_dir / "OpenAL32.dll").is_file():
-        if not (bin_dir / "fmt.dll").is_file():
-            fail("OpenAL32.dll is present but fmt.dll is missing")
-            errors += 1
-        else:
-            print("OK: OpenAL runtime closure contains fmt.dll")
+    if bin_dir.is_dir():
+        runtime_errors = validate_runtime_bin(bin_dir)
+        for message in runtime_errors:
+            fail(message)
+        errors += len(runtime_errors)
 
     try:
         declared = parse_overlay_manifest(overlay_manifest)
@@ -122,7 +123,7 @@ def validate(root: Path) -> int:
         fail(f"RC6 release validation failed with {errors} problem(s)")
         return 1
 
-    print("RC6 release validation passed: x64 Vulkan engine + runtime closure + sparse gamedata policy.")
+    print("RC6 release validation passed: x64 Vulkan engine + recursive runtime closure + sparse gamedata policy.")
     return 0
 
 
