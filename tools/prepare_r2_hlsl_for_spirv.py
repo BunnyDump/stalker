@@ -8,6 +8,7 @@ TECHNIQUE_RE = re.compile(r"^\s*(?:FXVS|FXPS)\s*;?\s*$", re.MULTILINE)
 INCLUDE_RE = re.compile(r'(^\s*#\s*include\s*[<\"])([^>\"]+)([>\"])', re.MULTILINE)
 RESERVED_POINT_RE = re.compile(r"\bpoint\b")
 LEGACY_SAMPLE_FLOAT4_RE = re.compile(r"\bsample\((I\.tc\d+)\)")
+COMBINE_BLOOM_RE = re.compile(r"\bhalf3\s+bloom\s*=\s*tex2D")
 LOD_COMPAT = """#define tex2Dlod(s,c) tex2D(s,(c).xy)\n#define tex3Dlod(s,c) tex3D(s,(c).xyz)\n#define texCUBElod(s,c) texCUBE(s,(c).xyz)\n"""
 
 
@@ -37,9 +38,11 @@ def preprocess_file(src: Path, dst: Path) -> None:
     text = preprocess_text(text)
     lower_name = src.name.lower()
     if lower_name in {"bloom_luminance_2.ps", "bloom_luminance_3.ps"}:
-        # DX9 accepted scalar replication for the second dot() operand.
-        # Make the intended 0.25-per-component weight explicit for SPIR-V HLSL.
         text = text.replace("1/4.h", "half4(0.25h,0.25h,0.25h,0.25h)")
+    if lower_name == "combine_2.ps":
+        # combine_bloom consumes half4 and uses high.a. Preserve the sampled
+        # alpha instead of relying on DX9's permissive half3 -> half4 coercion.
+        text = COMBINE_BLOOM_RE.sub("half4 bloom = tex2D", text)
     if src.suffix.lower() in {".vs", ".ps"}:
         text = LOD_COMPAT + text
     dst.parent.mkdir(parents=True, exist_ok=True)
