@@ -1,0 +1,78 @@
+name: RC6 Vulkan RenderTarget Materialization
+
+on:
+  push:
+    branches: [xray-rc6-vulkan-rendertarget-fvf]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-vulkan-rendertarget-materialization-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    name: Vulkan render-target transformation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout integration repo
+        uses: actions/checkout@v4
+
+      - name: Reconstruct RC6 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat patches/rc6_ci_bin.part* > /tmp/RC6.patch.xz
+          actual="$(sha256sum /tmp/RC6.patch.xz | awk '{print $1}')"
+          test "$actual" = "a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482"
+          xz -dc /tmp/RC6.patch.xz > /tmp/RC6.patch
+
+      - name: Clone pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
+          git -C source checkout --quiet ac3c009a3ecea26b60f16468993e7c540d063acf
+          cp -a source/xr_3da/xrRender_R2 source/xr_3da/xrRender_VK
+          git -C source apply --check /tmp/RC6.patch
+          git -C source apply /tmp/RC6.patch
+          git -C source apply patches/rc6-vcpkg-manifest-fix.patch
+          git -C source apply patches/rc6-vcpkg-baseline-fix.patch
+
+      - name: Materialize complete Vulkan transformation chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/fix_x64_item_metadata.py source
+          python tools/fix_legacy_stl.py source
+          python tools/fix_x64_abi.py source
+          python tools/fix_x64_runtime_compat.py source
+
+      - name: Validate renderer-neutral render-target policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          rt=source/xr_3da/xrRender_VK/r2_rendertarget.cpp
+          grep -q 'enum XrRtFormat' "$rt"
+          grep -q 'enum XrPrimitiveTopology' "$rt"
+          grep -q 'enum XrRtVertexLayout' "$rt"
+          grep -q 'xr_rt_legacy_format' "$rt"
+          grep -q 'xr_primitive_legacy_topology' "$rt"
+          grep -q 'xr_rt_legacy_fvf' "$rt"
+          if grep -E 'RCache\.Render\(D3DPT_' "$rt"; then
+            echo 'Direct D3D primitive topology remains in RCache.Render policy' >&2
+            exit 1
+          fi
+          python tools/audit_vulkan_renderer.py source --json rendertarget-materialization-audit.json --top 100
+
+      - name: Upload audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-vulkan-rendertarget-materialization-audit
+          path: rendertarget-materialization-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
