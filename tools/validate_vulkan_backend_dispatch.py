@@ -22,14 +22,10 @@ def validate(root: Path) -> None:
     vk = paths["vk"].read_text(encoding="utf-8")
 
     for token in (
-        "xr_vk_backend_draw_indexed_fn",
-        "xr_vk_backend_draw_fn",
-        "IDirect3DVertexShader9* vertex_shader",
-        "IDirect3DPixelShader9* pixel_shader",
-        "LPCSTR vertex_shader_name",
-        "LPCSTR pixel_shader_name",
-        "g_xr_vk_backend_draw_indexed",
-        "g_xr_vk_backend_draw",
+        "xr_vk_backend_draw_indexed_fn", "xr_vk_backend_draw_fn",
+        "IDirect3DVertexShader9* vertex_shader", "IDirect3DPixelShader9* pixel_shader",
+        "LPCSTR vertex_shader_name", "LPCSTR pixel_shader_name",
+        "g_xr_vk_backend_draw_indexed", "g_xr_vk_backend_draw",
     ):
         if token not in header:
             raise RuntimeError(f"backend dispatch validation: missing contract token {token}")
@@ -51,21 +47,25 @@ def validate(root: Path) -> None:
         if f"__cdecl {symbol}" not in vk:
             raise RuntimeError(f"backend dispatch validation: renderer does not export {symbol}")
 
-    export_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw_indexed')
-    if export_start < 0:
-        raise RuntimeError("backend dispatch validation: indexed renderer export missing")
-    export_slice = vk[export_start:]
-    for token in (
-        "IDirect3DVertexShader9* vertex_shader",
-        "IDirect3DPixelShader9* pixel_shader",
-        "LPCSTR vertex_shader_name",
-        "LPCSTR pixel_shader_name",
-        "!vertex_shader || !pixel_shader",
-        "!vertex_shader_name || !pixel_shader_name",
-        "return FALSE;",
-    ):
-        if token not in export_slice:
-            raise RuntimeError(f"backend dispatch validation: renderer export missing {token}")
+    indexed_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw_indexed')
+    plain_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw(', indexed_start)
+    if indexed_start < 0 or plain_start < 0:
+        raise RuntimeError("backend dispatch validation: renderer exports missing")
+
+    for label, block in (("indexed", vk[indexed_start:plain_start]), ("plain", vk[plain_start:])):
+        for token in (
+            "IDirect3DVertexShader9* vertex_shader", "IDirect3DPixelShader9* pixel_shader",
+            "LPCSTR vertex_shader_name", "LPCSTR pixel_shader_name",
+            "!vertex_shader || !pixel_shader", "!vertex_shader_name || !pixel_shader_name",
+            "VkCommandBuffer command_buffer = reinterpret_cast<VkCommandBuffer>(xr_vk_bootstrap_active_command_buffer());",
+            "if (command_buffer == VK_NULL_HANDLE)", "return FALSE;",
+        ):
+            if token not in block:
+                raise RuntimeError(f"backend dispatch validation: {label} export missing {token}")
+        runtime_guard = block.find("xr_vk_bootstrap_runtime_ready()")
+        active_guard = block.find("xr_vk_bootstrap_active_command_buffer()")
+        if runtime_guard < 0 or active_guard < 0 or runtime_guard > active_guard:
+            raise RuntimeError(f"backend dispatch validation: {label} active-frame guard order invalid")
 
     stale_calls = (
         "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, baseV",
@@ -79,15 +79,14 @@ def validate(root: Path) -> None:
 
     if "vk_vs_name = _n;" not in runtime or "vk_ps_name = _n;" not in runtime:
         raise RuntimeError("backend dispatch validation: release-safe shader names are not captured")
-
     if "D3DPT_TRIANGLELIST" in runtime[runtime.find("ICF void CBackend::Render"):runtime.find("ICF void CBackend::set_Shader")]:
         raise RuntimeError("backend dispatch validation: production draw path hard-codes triangle-list topology")
 
-    print("[vulkan-backend-dispatch] VS/PS handles + stable names + indexed/non-indexed renderer ABI + D3D fallback verified")
+    print("[vulkan-backend-dispatch] shader handles/names + active R2 command buffer + renderer ABI + D3D fallback verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate live SHOC CBackend to Vulkan renderer dispatch with shader handles and stable names.")
+    parser = argparse.ArgumentParser(description="Validate live SHOC CBackend to Vulkan renderer dispatch with shader identity and active frame gating.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
