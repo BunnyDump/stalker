@@ -6,6 +6,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from normalize_spirv_bindings import normalize_bindings
 from prepare_r2_hlsl_for_spirv import preprocess_tree
 
 ENTRYPOINT_RE = re.compile(r"\b(main(?:_[A-Za-z0-9_]+)?)\s*\(")
@@ -99,14 +100,24 @@ def main() -> int:
             proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             log = logs / rel.with_suffix(rel.suffix + f".{variant_name}.log")
             log.parent.mkdir(parents=True, exist_ok=True)
-            log.write_text(proc.stdout, encoding="utf-8", errors="replace")
+            log_text = proc.stdout
+            success = proc.returncode == 0 and out.is_file() and out.stat().st_size >= 20
+            bindings = []
+            if success:
+                try:
+                    bindings = normalize_bindings(out)
+                except Exception as exc:
+                    success = False
+                    log_text += f"\nSPIR-V binding normalization failed: {exc}\n"
+            log.write_text(log_text, encoding="utf-8", errors="replace")
             row = {
                 "shader": rel.as_posix(),
                 "stage": stage,
                 "entrypoint": entrypoint,
                 "variant": variant_name,
                 "defines": list(defines),
-                "success": proc.returncode == 0 and out.is_file() and out.stat().st_size >= 20,
+                "bindings": bindings,
+                "success": success,
                 "spirv_bytes": out.stat().st_size if out.is_file() else 0,
                 "log": log.relative_to(work).as_posix(),
             }
@@ -126,6 +137,12 @@ def main() -> int:
         "compiled": compiled,
         "failed": len(failures),
         "coverage_percent": round(compiled * 100.0 / total, 2) if total else 0.0,
+        "binding_contract": {
+            "descriptor_set": 0,
+            "ubo_binding": 0,
+            "sampled_binding_first": 1,
+            "sampled_binding_last": 8,
+        },
         "results": results,
     }
     (work / "spirv_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
