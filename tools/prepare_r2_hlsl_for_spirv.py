@@ -6,6 +6,7 @@ from pathlib import Path
 
 TECHNIQUE_RE = re.compile(r"^\s*(?:FXVS|FXPS)\s*;?\s*$", re.MULTILINE)
 INCLUDE_RE = re.compile(r'(^\s*#\s*include\s*[<\"])([^>\"]+)([>\"])', re.MULTILINE)
+RESERVED_POINT_RE = re.compile(r"\bpoint\b")
 
 
 def decode_legacy_shader(data: bytes) -> str:
@@ -23,19 +24,18 @@ def preprocess_text(text: str) -> str:
     def normalize_include(match: re.Match[str]) -> str:
         return match.group(1) + match.group(2).replace("\\", "/") + match.group(3)
 
-    return INCLUDE_RE.sub(normalize_include, text)
+    text = INCLUDE_RE.sub(normalize_include, text)
+    # glslang reserves `point` as a geometry primitive token. Legacy R2 uses
+    # it as an ordinary identifier in several lighting shaders/headers.
+    # R2 stage sources do not use geometry-shader primitive declarations, so
+    # normalizing this identifier across the prepared corpus is semantics-safe.
+    text = RESERVED_POINT_RE.sub("xr_point", text)
+    return text
 
 
 def preprocess_file(src: Path, dst: Path) -> None:
     text = decode_legacy_shader(src.read_bytes())
     text = preprocess_text(text)
-
-    # glslang reserves `point` as a geometry primitive token while the legacy
-    # R2 lighting header uses it as a function parameter. Rename only this
-    # compatibility hotspot, preserving the shader's arithmetic exactly.
-    if src.name.lower() == "lmodel.h":
-        text = re.sub(r"\bpoint\b", "point_pos", text)
-
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(text, encoding="utf-8")
 
