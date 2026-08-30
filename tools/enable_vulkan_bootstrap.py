@@ -163,42 +163,43 @@ def patch_renderer_project(renderer: Path) -> None:
     print("[vulkan-project] vk_bootstrap.cpp/.h added to xrRender_VK.vcxproj")
 
 
-def patch_renderer_entry(renderer: Path) -> None:
-    candidates = [renderer / "xrRender_VK.cpp", renderer / "xrRender_R2.cpp"]
-    entry = next((p for p in candidates if p.is_file()), None)
-    if entry is None:
-        raise RuntimeError("Vulkan bootstrap: renderer DLL entry source not found")
-    text = entry.read_text(encoding="utf-8-sig", errors="strict")
+def patch_renderer_lifecycle(renderer: Path) -> None:
+    source = renderer / "r2.cpp"
+    if not source.is_file():
+        raise FileNotFoundError(source)
+
+    text = source.read_text(encoding="utf-8-sig", errors="strict")
+    newline = "\r\n" if "\r\n" in text else "\n"
+
     if '#include "vk_bootstrap.h"' not in text:
-        m = re.search(r'(#include\s+"stdafx\.h"\s*\r?\n)', text)
-        if not m:
-            raise RuntimeError("Vulkan bootstrap: stdafx include not found")
-        text = text[:m.end()] + '#include "vk_bootstrap.h"\n' + text[m.end():]
+        match = re.search(r'(#include\s+"r2\.h"\s*\r?\n)', text)
+        if not match:
+            raise RuntimeError("Vulkan bootstrap: r2.h include not found in renderer lifecycle source")
+        text = text[:match.end()] + '#include "vk_bootstrap.h"' + newline + text[match.end():]
 
     if "xr_vk_bootstrap_initialize()" not in text:
-        pattern = r'(case\s+DLL_PROCESS_ATTACH\s*:\s*\r?\n)'
-        repl = r'\1\t\tif (!xr_vk_bootstrap_initialize())\n\t\t\treturn FALSE;\n'
-        text, count = re.subn(pattern, repl, text, count=1)
+        pattern = r'(void\s+CRender::create\(\)\s*\r?\n\{\s*\r?\n)'
+        replacement = (
+            r'\1' +
+            '\tif (!xr_vk_bootstrap_initialize())' + newline +
+            '\t\tMsg("! [X-Ray Vulkan] Native Vulkan bootstrap unavailable; transitional renderer path remains active.");' + newline + newline
+        )
+        text, count = re.subn(pattern, replacement, text, count=1)
         if count != 1:
-            raise RuntimeError("Vulkan bootstrap: DLL_PROCESS_ATTACH block not found")
+            raise RuntimeError("Vulkan bootstrap: CRender::create lifecycle hook not found")
 
     if "xr_vk_bootstrap_shutdown();" not in text:
-        old = "\tcase DLL_THREAD_ATTACH:\n\tcase DLL_THREAD_DETACH:\n\tcase DLL_PROCESS_DETACH:\n\t\tbreak;"
-        if old not in text:
-            old = old.replace("\n", "\r\n")
-        if old not in text:
-            raise RuntimeError("Vulkan bootstrap: DLL detach block not found")
-        newline = "\r\n" if "\r\n" in old else "\n"
-        new = ("\tcase DLL_THREAD_ATTACH:" + newline +
-               "\tcase DLL_THREAD_DETACH:" + newline +
-               "\t\tbreak;" + newline +
-               "\tcase DLL_PROCESS_DETACH:" + newline +
-               "\t\txr_vk_bootstrap_shutdown();" + newline +
-               "\t\tbreak;")
-        text = text.replace(old, new, 1)
+        marker = '\tDevice.seqFrame.Remove(this);' + newline
+        if marker not in text:
+            raise RuntimeError("Vulkan bootstrap: CRender::destroy shutdown marker not found")
+        text = text.replace(
+            marker,
+            marker + '\txr_vk_bootstrap_shutdown();' + newline,
+            1,
+        )
 
-    entry.write_text(text, encoding="utf-8")
-    print(f"[vulkan-entry] {entry.name}: VkInstance bootstrap wired into renderer DLL lifetime")
+    source.write_text(text, encoding="utf-8")
+    print("[vulkan-lifecycle] native Vulkan bootstrap moved out of DllMain into CRender::create/destroy")
 
 
 def enable_vulkan_bootstrap(root: Path) -> None:
@@ -210,15 +211,32 @@ def enable_vulkan_bootstrap(root: Path) -> None:
     (renderer / "vk_bootstrap.h").write_text(HEADER, encoding="utf-8")
     (renderer / "vk_bootstrap.cpp").write_text(SOURCE, encoding="utf-8")
     patch_renderer_project(renderer)
-    patch_renderer_entry(renderer)
+    patch_renderer_lifecycle(renderer)
+
     project_text = (renderer / "xrRender_VK.vcxproj").read_text(encoding="utf-8", errors="ignore")
     if "vk_bootstrap.cpp" not in project_text:
         raise RuntimeError("Vulkan bootstrap validation: source is absent from project")
+
     source_text = (renderer / "vk_bootstrap.cpp").read_text(encoding="utf-8")
     for token in ("VkInstance", "vkCreateInstance", "vkEnumeratePhysicalDevices", "vulkan-1.dll"):
         if token not in source_text:
             raise RuntimeError(f"Vulkan bootstrap validation: missing {token}")
-    print("[vulkan-bootstrap] native loader + VkInstance + physical-device enumeration installed")
+
+    lifecycle_text = (renderer / "r2.cpp").read_text(encoding="utf-8", errors="ignore")
+    if lifecycle_text.count("xr_vk_bootstrap_initialize()") != 1:
+        raise RuntimeError("Vulkan bootstrap validation: expected one CRender::create initialization hook")
+    if lifecycle_text.count("xr_vk_bootstrap_shutdown();") != 1:
+        raise RuntimeError("Vulkan bootstrap validation: expected one CRender::destroy shutdown hook")
+
+    entry_candidates = [renderer / "xrRender_VK.cpp", renderer / "xrRender_R2.cpp"]
+    entry = next((p for p in entry_candidates if p.is_file()), None)
+    if entry is None:
+        raise RuntimeError("Vulkan bootstrap validation: renderer DLL entry source not found")
+    entry_text = entry.read_text(encoding="utf-8", errors="ignore")
+    if "xr_vk_bootstrap_initialize" in entry_text or "xr_vk_bootstrap_shutdown" in entry_text:
+        raise RuntimeError("Vulkan bootstrap validation: Vulkan API must not run from DllMain")
+
+    print("[vulkan-bootstrap] native loader + VkInstance + physical-device enumeration installed outside loader lock")
 
 
 def main() -> int:
