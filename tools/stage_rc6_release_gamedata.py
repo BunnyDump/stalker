@@ -69,25 +69,25 @@ def _find_vc_runtime_dir() -> Path | None:
 
 
 def stage_runtime_closure(ready_root: Path) -> tuple[list[str], list[str]]:
-    """Copy OpenAL/vcpkg and MSVC redistributable DLLs needed by the built runtime."""
+    """Copy the self-contained OpenAL DLL and VC runtime needed by other RC6 binaries."""
     bin_dir = ready_root / "bin"
     if not bin_dir.is_dir():
         raise FileNotFoundError(f"RC6 bin directory not found: {bin_dir}")
 
     temp_root = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "")
     openal_candidates = (
-        temp_root / "xray-rc6-vcpkg" / "installed-openal" / "x64-windows" / "bin",
-        temp_root / "xray-rc6-vcpkg" / "installed-openal" / "x64-windows" / "debug" / "bin",
+        temp_root / "xray-rc6-vcpkg" / "installed-openal" / "xray-openal-static-crt" / "bin",
+        temp_root / "xray-rc6-vcpkg" / "installed-openal" / "xray-openal-static-crt" / "debug" / "bin",
     )
 
     openal_files: list[str] = []
     for candidate in openal_candidates:
         openal_files.extend(_copy_dlls(candidate, bin_dir))
 
-    if (bin_dir / "OpenAL32.dll").is_file() and not (bin_dir / "fmt.dll").is_file():
+    if not (bin_dir / "OpenAL32.dll").is_file() and not (bin_dir / "openal32.dll").is_file():
         searched = ", ".join(str(path) for path in openal_candidates)
         raise RuntimeError(
-            "OpenAL32.dll is present but fmt.dll was not staged; refusing to publish a broken bin. "
+            "Static-CRT OpenAL32.dll was not staged from the RC6 overlay port. "
             f"Searched: {searched}"
         )
 
@@ -109,8 +109,6 @@ def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
     if not ready_root.is_dir():
         raise FileNotFoundError(f"RC6 ready directory not found: {ready_root}")
 
-    # Sparse-overlay policy: never copy source/full gamedata. The release may contain
-    # only files explicitly placed under release/gamedata-overlay by this integration.
     gamedata = ready_root / "gamedata"
     if gamedata.exists():
         shutil.rmtree(gamedata)
@@ -139,10 +137,10 @@ def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
     runtime_lines = [
         "RC6 Windows runtime closure staged into bin:",
         "",
-        "OpenAL/vcpkg DLLs:",
+        "OpenAL overlay DLLs (bundled fmt + static CRT):",
         *(openal_files if openal_files else ["(none)"]),
         "",
-        "Microsoft VC Redistributable DLLs:",
+        "Microsoft VC Redistributable DLLs for remaining engine modules:",
         *(vc_files if vc_files else ["(none)"]),
     ]
     (ready_root / "RUNTIME_DEPENDENCIES.txt").write_text(
@@ -151,7 +149,7 @@ def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
 
     print(
         f"[release-stage] sparse gamedata files: {len(overlay_files)}; "
-        f"OpenAL runtime DLLs: {len(openal_files)}; VC runtime DLLs: {len(vc_files)}"
+        f"OpenAL overlay DLLs: {len(openal_files)}; VC runtime DLLs: {len(vc_files)}"
     )
 
 
