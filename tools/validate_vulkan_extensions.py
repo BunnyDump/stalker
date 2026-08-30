@@ -19,7 +19,7 @@ def install_extension_validation(root: Path) -> None:
         return false;
     }
 '''
-    instance_replacement = '''    PFN_vkCreateInstance create_instance = reinterpret_cast<PFN_vkCreateInstance>(g_vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateInstance"));
+    instance_replacement = r'''    PFN_vkCreateInstance create_instance = reinterpret_cast<PFN_vkCreateInstance>(g_vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateInstance"));
     PFN_vkEnumerateInstanceExtensionProperties enumerate_instance_extensions =
         reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
             g_vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"));
@@ -71,7 +71,7 @@ def install_extension_validation(root: Path) -> None:
         return false;
     }
 '''
-    device_replacement = '''    PFN_vkGetPhysicalDeviceQueueFamilyProperties get_queue_families = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(g_vkGetInstanceProcAddr(g_vulkan_instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
+    device_replacement = r'''    PFN_vkGetPhysicalDeviceQueueFamilyProperties get_queue_families = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(g_vkGetInstanceProcAddr(g_vulkan_instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
     PFN_vkCreateDevice create_device = reinterpret_cast<PFN_vkCreateDevice>(g_vkGetInstanceProcAddr(g_vulkan_instance, "vkCreateDevice"));
     PFN_vkEnumerateDeviceExtensionProperties enumerate_device_extensions =
         reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
