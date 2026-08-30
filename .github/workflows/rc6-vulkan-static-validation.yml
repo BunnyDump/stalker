@@ -96,8 +96,28 @@ jobs:
           grep -Fq 'xr_vk_texture_block_info' "$vk"
           grep -Fq 'staging_offset % block_bytes' "$vk"
           grep -Fq 'xr_vk_allocate_texture_material' "$vk"
+          grep -Fq 'xr_vk_restore_signaled_frame_fence' "$vk"
+          grep -Fq 'presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR' "$vk"
           grep -Fq 'xr_vk_uniform_stream' "$vk"
           grep -Fq 'xr_vk_bootstrap_frame' "$vk"
+
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('source/xr_3da/xrRender_VK/vk_bootstrap.cpp').read_text(encoding='utf-8')
+          start = text.index('bool xr_vk_bootstrap_frame()')
+          end = text.index('bool xr_vk_bootstrap_runtime_ready()', start)
+          frame = text[start:end]
+          reset_cmd = frame.index('g_vkResetCommandBuffer')
+          reset_fence = frame.index('g_vkResetFences')
+          submit = frame.index('g_vkQueueSubmit')
+          if not reset_cmd < reset_fence < submit:
+              raise SystemExit('Unsafe Vulkan fence reset order')
+          present = frame.index('VkResult presented = g_vkQueuePresentKHR')
+          guard = frame.index('presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR', present)
+          commit = frame.index('g_image_initialized[image_index] = 1', present)
+          if not present < guard < commit:
+              raise SystemExit('Unsafe swapchain image state commit order')
+          PY
 
           echo 'Static RC6 Vulkan materialization contract passed.'
 
