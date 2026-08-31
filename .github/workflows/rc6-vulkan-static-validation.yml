@@ -22,11 +22,12 @@ jobs:
       - name: Checkout integration repo
         uses: actions/checkout@v4
 
-      - name: Test sparse release staging policy
+      - name: Test integration policies and SPIR-V contract model
         shell: bash
         run: |
           set -euo pipefail
           python tools/test_release_staging_policy.py
+          python tools/test_spirv_descriptor_contract_model.py
 
       - name: Validate pinned OpenAL overlay policy
         shell: bash
@@ -142,8 +143,13 @@ jobs:
           grep -Fq 'xr_vk_create_buffer(67108864ull' "$vk"
           grep -Fq 'g_frame_descriptor_sets.push_back(descriptor_set)' "$vk"
           grep -Fq 'xr_vk_release_frame_descriptors()' "$vk"
-          grep -Fq 'if (!resolved_textures.pixel[i])' "$vk"
-          grep -Fq 'if (!resolved_textures.vertex[i])' "$vk"
+          grep -Fq 'xr_vk_spirv_uniform_block' "$vk"
+          grep -Fq 'xr_vk_spirv_sampled_image_array' "$vk"
+          grep -Fq 'xr_vk_collect_spirv_texture_usage' "$vk"
+          grep -Fq 'xr_vk_record_pipeline_texture_usage' "$vk"
+          grep -Fq 'xr_vk_find_pipeline_texture_usage(pipeline, pixel_usage_mask, vertex_usage_mask)' "$vk"
+          grep -Fq 'pixel_usage_mask & (1u << i)' "$vk"
+          grep -Fq 'vertex_usage_mask & (1u << i)' "$vk"
           grep -Fq 'void xr_vk_destroy_swapchain_resources()' "$vk"
           grep -Fq 'g_descriptor_pool == VK_NULL_HANDLE' "$vk"
           grep -Fq 'g_uniform_buffer == VK_NULL_HANDLE' "$vk"
