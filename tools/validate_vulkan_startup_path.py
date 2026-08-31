@@ -99,6 +99,20 @@ def validate(root: Path) -> None:
     if "vkEnumerateDeviceExtensionProperties" not in vk or "VK_KHR_SWAPCHAIN_EXTENSION_NAME" not in vk:
         raise RuntimeError("Vulkan startup validation: selected-device extension enumeration missing")
 
+    abort_helper = vk.find("bool xr_vk_abort_window_attach()")
+    attach_fn = vk.find("bool xr_vk_bootstrap_attach_window(void* window_handle, unsigned width, unsigned height)", abort_helper)
+    resize_fn = vk.find("bool xr_vk_bootstrap_resize(unsigned width, unsigned height)", attach_fn)
+    if min(abort_helper, attach_fn, resize_fn) < 0 or not abort_helper < attach_fn < resize_fn:
+        raise RuntimeError("Vulkan startup validation: atomic HWND attach helper/boundaries missing")
+    abort_region = vk[abort_helper:attach_fn]
+    attach_region = vk[attach_fn:resize_fn]
+    if "xr_vk_bootstrap_shutdown();" not in abort_region or "return false;" not in abort_region:
+        raise RuntimeError("Vulkan startup validation: HWND attach abort helper does not fully reset bootstrap")
+    if attach_region.count("return xr_vk_abort_window_attach();") < 7:
+        raise RuntimeError("Vulkan startup validation: not all HWND attach failure paths are atomic")
+    if "xr_vk_destroy_window_runtime();\n        return false;" in attach_region:
+        raise RuntimeError("Vulkan startup validation: partial-only HWND attach cleanup remains")
+
     life = lifecycle.read_text(encoding="utf-8", errors="ignore")
     attach_call = "xr_vk_bootstrap_attach_window(Device.m_hWnd, Device.dwWidth, Device.dwHeight)"
     if attach_call not in life:
@@ -123,7 +137,7 @@ def validate(root: Path) -> None:
     if not scope < ready < begin < end or not render_fn < scope_instance:
         raise RuntimeError("Vulkan startup validation: Render-scoped startup/present order invalid")
 
-    print("[validate-vulkan-startup] post-load probe/activate + pre-activation swapchain capability + safe unload/R2/R1 fallback + HWND init + Render-scoped present verified")
+    print("[validate-vulkan-startup] post-load probe/activate + pre-activation swapchain capability + atomic HWND attach + safe R2/R1 fallback + Render-scoped present verified")
 
 
 def main() -> int:
