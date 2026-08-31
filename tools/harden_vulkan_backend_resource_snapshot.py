@@ -21,70 +21,96 @@ def harden(root: Path) -> None:
             raise FileNotFoundError(path)
 
     h = backend_h.read_text(encoding="utf-8")
-    if "const R_constant_array* vertex_constants" not in h:
+    if h.count("const R_constant_array* vertex_constants") < 2:
         h = replace_once(
             h,
-            "    IDirect3DPixelShader9* pixel_shader, u32 base_vertex, u32 start_vertex, u32 vertex_count,\n"
+            "    IDirect3DPixelShader9* pixel_shader, LPCSTR vertex_shader_name, LPCSTR pixel_shader_name,\n"
+            "    IDirect3DStateBlock9* state_block, const xr_vk_render_state_snapshot* render_state, u32 base_vertex,\n"
+            "    u32 start_vertex, u32 vertex_count, u32 start_index, u32 primitive_count);",
+            "    IDirect3DPixelShader9* pixel_shader, LPCSTR vertex_shader_name, LPCSTR pixel_shader_name,\n"
+            "    IDirect3DStateBlock9* state_block, const xr_vk_render_state_snapshot* render_state,\n"
+            "    const R_constant_array* vertex_constants, const R_constant_array* pixel_constants,\n"
+            "    CTexture* const* pixel_textures, u32 pixel_texture_count, CTexture* const* vertex_textures,\n"
+            "    u32 vertex_texture_count, u32 base_vertex, u32 start_vertex, u32 vertex_count,\n"
             "    u32 start_index, u32 primitive_count);",
-            "    IDirect3DPixelShader9* pixel_shader, const R_constant_array* vertex_constants,\n"
-            "    const R_constant_array* pixel_constants, CTexture* const* pixel_textures, u32 pixel_texture_count,\n"
-            "    CTexture* const* vertex_textures, u32 vertex_texture_count, u32 base_vertex, u32 start_vertex,\n"
-            "    u32 vertex_count, u32 start_index, u32 primitive_count);",
-            "indexed resource-snapshot ABI",
+            "indexed state-aware resource-snapshot ABI",
         )
         h = replace_once(
             h,
-            "    IDirect3DVertexShader9* vertex_shader, IDirect3DPixelShader9* pixel_shader,\n"
-            "    u32 start_vertex, u32 primitive_count);",
-            "    IDirect3DVertexShader9* vertex_shader, IDirect3DPixelShader9* pixel_shader,\n"
-            "    const R_constant_array* vertex_constants, const R_constant_array* pixel_constants,\n"
-            "    CTexture* const* pixel_textures, u32 pixel_texture_count, CTexture* const* vertex_textures,\n"
-            "    u32 vertex_texture_count, u32 start_vertex, u32 primitive_count);",
-            "non-indexed resource-snapshot ABI",
+            "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
+            "    const xr_vk_render_state_snapshot* render_state, u32 start_vertex, u32 primitive_count);",
+            "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
+            "    const xr_vk_render_state_snapshot* render_state, const R_constant_array* vertex_constants,\n"
+            "    const R_constant_array* pixel_constants, CTexture* const* pixel_textures, u32 pixel_texture_count,\n"
+            "    CTexture* const* vertex_textures, u32 vertex_texture_count, u32 start_vertex, u32 primitive_count);",
+            "non-indexed state-aware resource-snapshot ABI",
         )
         backend_h.write_text(h, encoding="utf-8")
 
     rt = backend_runtime.read_text(encoding="utf-8")
-    indexed_old = "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, baseV, startV, countV, startI, PC)"
+    indexed_old = (
+        "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, vk_vs_name, vk_ps_name, state, "
+        "vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, baseV, startV, countV, startI, PC)"
+    )
     indexed_new = (
-        "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, &constants.a_vertex, "
-        "&constants.a_pixel, textures_ps, 16, textures_vs, 5, baseV, startV, countV, startI, PC)"
+        "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, vk_vs_name, vk_ps_name, state, "
+        "vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, &constants.a_vertex, &constants.a_pixel, "
+        "textures_ps, 16, textures_vs, 5, baseV, startV, countV, startI, PC)"
     )
     if indexed_new not in rt:
-        rt = replace_once(rt, indexed_old, indexed_new, "indexed resource-snapshot call")
+        rt = replace_once(rt, indexed_old, indexed_new, "indexed state-aware resource-snapshot call")
 
-    plain_old = "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, startV, PC)"
+    plain_old = (
+        "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, vk_vs_name, vk_ps_name, state, "
+        "vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, startV, PC)"
+    )
     plain_new = (
-        "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, &constants.a_vertex, &constants.a_pixel, "
+        "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, vk_vs_name, vk_ps_name, state, "
+        "vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, &constants.a_vertex, &constants.a_pixel, "
         "textures_ps, 16, textures_vs, 5, startV, PC)"
     )
     if plain_new not in rt:
-        rt = replace_once(rt, plain_old, plain_new, "non-indexed resource-snapshot call")
+        rt = replace_once(rt, plain_old, plain_new, "non-indexed state-aware resource-snapshot call")
     backend_runtime.write_text(rt, encoding="utf-8")
 
     vk = vk_source.read_text(encoding="utf-8")
-    if "CTexture* const* pixel_textures" not in vk[vk.find('xrRender_vk_backend_draw_indexed'):]:
-        vk = replace_once(
-            vk,
-            "    IDirect3DVertexShader9* vertex_shader, IDirect3DPixelShader9* pixel_shader,\n"
-            "    u32 base_vertex, u32 start_vertex, u32 vertex_count, u32 start_index, u32 primitive_count)",
-            "    IDirect3DVertexShader9* vertex_shader, IDirect3DPixelShader9* pixel_shader,\n"
-            "    const R_constant_array* vertex_constants, const R_constant_array* pixel_constants,\n"
-            "    CTexture* const* pixel_textures, u32 pixel_texture_count, CTexture* const* vertex_textures,\n"
-            "    u32 vertex_texture_count, u32 base_vertex, u32 start_vertex, u32 vertex_count,\n"
-            "    u32 start_index, u32 primitive_count)",
-            "indexed Vulkan export resource snapshot",
+    indexed_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw_indexed')
+    plain_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw(', indexed_start)
+    if indexed_start < 0 or plain_start < 0:
+        raise RuntimeError("Vulkan backend resource snapshot: renderer exports missing")
+
+    indexed_block = vk[indexed_start:plain_start]
+    if "const R_constant_array* vertex_constants" not in indexed_block:
+        old = (
+            "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
+            "    const xr_vk_render_state_snapshot* render_state, u32 base_vertex, u32 start_vertex,\n"
+            "    u32 vertex_count, u32 start_index, u32 primitive_count)"
         )
-        vk = replace_once(
-            vk,
-            "    IDirect3DVertexShader9* vertex_shader, IDirect3DPixelShader9* pixel_shader,\n"
-            "    u32 start_vertex, u32 primitive_count)",
-            "    IDirect3DVertexShader9* vertex_shader, IDirect3DPixelShader9* pixel_shader,\n"
-            "    const R_constant_array* vertex_constants, const R_constant_array* pixel_constants,\n"
-            "    CTexture* const* pixel_textures, u32 pixel_texture_count, CTexture* const* vertex_textures,\n"
-            "    u32 vertex_texture_count, u32 start_vertex, u32 primitive_count)",
-            "non-indexed Vulkan export resource snapshot",
+        new = (
+            "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
+            "    const xr_vk_render_state_snapshot* render_state, const R_constant_array* vertex_constants,\n"
+            "    const R_constant_array* pixel_constants, CTexture* const* pixel_textures, u32 pixel_texture_count,\n"
+            "    CTexture* const* vertex_textures, u32 vertex_texture_count, u32 base_vertex, u32 start_vertex,\n"
+            "    u32 vertex_count, u32 start_index, u32 primitive_count)"
         )
+        indexed_block = replace_once(indexed_block, old, new, "indexed Vulkan export resource snapshot")
+        vk = vk[:indexed_start] + indexed_block + vk[plain_start:]
+
+    plain_start = vk.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_backend_draw(', indexed_start)
+    plain_block = vk[plain_start:]
+    if "const R_constant_array* vertex_constants" not in plain_block:
+        old = (
+            "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
+            "    const xr_vk_render_state_snapshot* render_state, u32 start_vertex, u32 primitive_count)"
+        )
+        new = (
+            "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
+            "    const xr_vk_render_state_snapshot* render_state, const R_constant_array* vertex_constants,\n"
+            "    const R_constant_array* pixel_constants, CTexture* const* pixel_textures, u32 pixel_texture_count,\n"
+            "    CTexture* const* vertex_textures, u32 vertex_texture_count, u32 start_vertex, u32 primitive_count)"
+        )
+        plain_block = replace_once(plain_block, old, new, "non-indexed Vulkan export resource snapshot")
+        vk = vk[:plain_start] + plain_block
 
     gate_old = "    bool xr_vk_backend_draw_resources_ready()\n    {\n"
     gate_new = (
@@ -127,7 +153,7 @@ def harden(root: Path) -> None:
             "u32 vertex_texture_count",
         ),
         backend_runtime: (
-            "&constants.a_vertex, &constants.a_pixel, textures_ps, 16, textures_vs, 5",
+            "vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, &constants.a_vertex, &constants.a_pixel, textures_ps, 16, textures_vs, 5",
         ),
         vk_source: (
             "xr_vk_backend_draw_resources_ready(const R_constant_array* vertex_constants",
@@ -141,7 +167,7 @@ def harden(root: Path) -> None:
             if token not in final:
                 raise RuntimeError(f"Vulkan backend resource snapshot validation failed in {path.name}: missing {token}")
 
-    print("[vulkan-backend-resources] exact CBackend constant caches + 16 PS/5 VS texture slots now cross the production Vulkan draw ABI; descriptor materialization remains fail-closed")
+    print("[vulkan-backend-resources] state-aware production ABI now carries exact CBackend constant caches + 16 PS/5 VS texture slots; descriptor materialization remains fail-closed")
 
 
 def main() -> int:
