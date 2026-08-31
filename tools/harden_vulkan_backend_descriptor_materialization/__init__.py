@@ -53,6 +53,31 @@ def harden(root: Path) -> None:
         if _STATIC_SENTINEL in final:
             source.write_text(final.replace(_STATIC_SENTINEL, "", 1), encoding="utf-8")
 
+    # The descriptor schema deliberately leaves null legacy texture slots unwritten.
+    # Without descriptor indexing / partially-bound support, submitting such a set is not
+    # a safe production path. Until shader reflection or a dedicated null texture fills
+    # those slots, accept Vulkan only when the complete PS[16]+VS[5] snapshot is backed by
+    # shader-readable resources. All sparse draws retain the existing D3D9 fallback.
+    final = source.read_text(encoding="utf-8")
+    resolve_marker = (
+        "        if (!xr_vk_resolve_texture_snapshot(pixel_textures, pixel_texture_count,\n"
+        "                vertex_textures, vertex_texture_count, resolved_textures))\n"
+        "            return false;\n"
+    )
+    sparse_guard = resolve_marker + (
+        "        for (u32 i = 0; i < XR_VK_PIXEL_TEXTURE_SLOTS; ++i)\n"
+        "            if (!resolved_textures.pixel[i])\n"
+        "                return false;\n"
+        "        for (u32 i = 0; i < XR_VK_VERTEX_TEXTURE_SLOTS; ++i)\n"
+        "            if (!resolved_textures.vertex[i])\n"
+        "                return false;\n"
+    )
+    if "if (!resolved_textures.pixel[i])" not in final:
+        if resolve_marker not in final:
+            raise RuntimeError("Vulkan descriptor materialization bridge: resolved texture gate marker missing")
+        final = final.replace(resolve_marker, sparse_guard, 1)
+        source.write_text(final, encoding="utf-8")
+
     final = source.read_text(encoding="utf-8")
     if _STATIC_SENTINEL in final:
         raise RuntimeError("Vulkan descriptor materialization bridge: temporary boundary sentinel leaked")
@@ -60,8 +85,10 @@ def harden(root: Path) -> None:
         "xr_vk_record_static_indexed_backend_draw(command_buffer, pipeline, descriptor_set, primitive",
         "xr_vk_record_static_backend_draw(command_buffer, pipeline, descriptor_set, primitive",
         "xr_vk_bind_material_descriptor(command_buffer, descriptor_set)",
+        "if (!resolved_textures.pixel[i])",
+        "if (!resolved_textures.vertex[i])",
     ):
         if token not in final:
             raise RuntimeError(f"Vulkan descriptor materialization bridge validation failed: missing {token}")
 
-    print("[vulkan-backend-descriptor-bridge] static recorder boundary repaired; temporary marker removed before compilation")
+    print("[vulkan-backend-descriptor-bridge] static boundary repaired; sparse descriptor sets fail closed to D3D9 fallback")
