@@ -99,6 +99,17 @@ jobs:
           python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source"
           if ($LASTEXITCODE -ne 0) { throw 'RC6 Win64 runtime compatibility migration failed.' }
 
+          python "$env:GITHUB_WORKSPACE\tools\harden_vulkan_capability_probe.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 full Vulkan hardening materialization failed.' }
+
+          $vk = Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\xrRender_VK\vk_bootstrap.cpp'
+          if (-not (Select-String -Path $vk -SimpleMatch 'XR_VK_TEXTURE_OWNER_CAPACITY = 8192' -Quiet)) {
+            throw 'RC6 materialized Vulkan renderer is missing texture owner registry.'
+          }
+          if (-not (Select-String -Path $vk -SimpleMatch 'xr_vk_texture_resource_shader_readable' -Quiet)) {
+            throw 'RC6 materialized Vulkan renderer is missing shader-readable texture ownership gate.'
+          }
+
           $utf8Bom = [Text.UTF8Encoding]::new($true)
           Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File | ForEach-Object {
             $text = [IO.File]::ReadAllText($_.FullName, [Text.UTF8Encoding]::new($false))
