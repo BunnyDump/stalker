@@ -28,6 +28,9 @@ def validate(root: Path) -> None:
         "draw.descriptor_set == VK_NULL_HANDLE",
         "xr_vk_bind_material_descriptor(command_buffer, draw.descriptor_set)",
         "draw.descriptor_set = descriptor_set",
+        "bool xr_vk_make_indexed_draw_packet(VkPipeline pipeline, VkDescriptorSet descriptor_set",
+        "D3DFORMAT index_format, D3DPRIMITIVETYPE primitive_type",
+        "xr_vk_d3d_primitive_to_topology(primitive_type, topology)",
     )
     for token in required:
         if token not in text:
@@ -47,10 +50,22 @@ def validate(root: Path) -> None:
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
         raise RuntimeError("Vulkan material descriptor validation failed: pipeline/descriptor/draw order is invalid")
 
+    factory_start = text.find("bool xr_vk_make_indexed_draw_packet")
+    factory_end = text.find("VkDeviceSize xr_vk_align_uniform_offset", factory_start)
+    if factory_start < 0:
+        raise RuntimeError("Vulkan material descriptor validation failed: packet factory missing")
+    if factory_end < 0:
+        factory_end = min((p for p in (text.find("VkShaderModule xr_vk_create_shader_module", factory_start), len(text)) if p >= 0))
+    factory = text[factory_start:factory_end]
+    if "descriptor_set == VK_NULL_HANDLE" not in factory:
+        raise RuntimeError("Vulkan material descriptor validation failed: packet factory permits missing descriptor set")
+    if "draw.primitive_type = primitive_type" not in factory:
+        raise RuntimeError("Vulkan material descriptor validation failed: packet factory drops D3D primitive topology")
+
     if "descriptor_set == VK_NULL_HANDLE" not in record:
         raise RuntimeError("Vulkan material descriptor validation failed: draw packet permits missing material set")
 
-    print("[validate-vulkan-materials] descriptor lifecycle + bind-before-draw path verified")
+    print("[validate-vulkan-materials] descriptor lifecycle + bind-before-draw + topology-preserving packet ABI verified")
 
 
 def main() -> int:
