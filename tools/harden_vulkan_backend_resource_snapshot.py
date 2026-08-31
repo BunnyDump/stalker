@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from harden_vulkan_backend_static_resource_snapshot import harden as harden_vulkan_backend_static_resource_snapshot
+from validate_vulkan_backend_static_draw import validate as validate_vulkan_backend_static_draw
+
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
     count = text.count(old)
@@ -145,6 +148,11 @@ def harden(root: Path) -> None:
 
     vk_source.write_text(vk, encoding="utf-8")
 
+    # Static level/model Vulkan calls share the exact same state-aware resource snapshot.
+    # Adapt them only after the common gate signature has changed.
+    harden_vulkan_backend_static_resource_snapshot(root)
+    validate_vulkan_backend_static_draw(root)
+
     required = {
         backend_h: (
             "const R_constant_array* vertex_constants",
@@ -159,6 +167,8 @@ def harden(root: Path) -> None:
             "xr_vk_backend_draw_resources_ready(const R_constant_array* vertex_constants",
             "pixel_texture_count != 16 || vertex_texture_count != 5",
             "xr_vk_backend_draw_resources_ready(vertex_constants, pixel_constants, pixel_textures, pixel_texture_count",
+            "xr_vk_record_static_indexed_backend_draw(command_buffer, pipeline, primitive",
+            "xr_vk_record_static_backend_draw(command_buffer, pipeline, primitive",
         ),
     }
     for path, tokens in required.items():
@@ -167,7 +177,7 @@ def harden(root: Path) -> None:
             if token not in final:
                 raise RuntimeError(f"Vulkan backend resource snapshot validation failed in {path.name}: missing {token}")
 
-    print("[vulkan-backend-resources] state-aware production ABI now carries exact CBackend constant caches + 16 PS/5 VS texture slots; descriptor materialization remains fail-closed")
+    print("[vulkan-backend-resources] state-aware production ABI now carries exact CBackend constant caches + 16 PS/5 VS texture slots across dynamic + static draws; descriptor materialization remains fail-closed")
 
 
 def main() -> int:
