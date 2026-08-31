@@ -13,13 +13,29 @@ extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_activate()
 }
 
 '''
+PROBE_SOURCE = r'''#include "stdafx.h"
+#include "vk_bootstrap.h"
+
+extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_capability_probe()
+{
+    return xr_vk_bootstrap_probe() ? TRUE : FALSE;
+}
+
+BOOL xrRender_test_hw()
+{
+    return xrRender_vk_capability_probe();
+}
+'''
 
 
 def harden(root: Path) -> None:
     renderer = root.resolve() / "xr_3da" / "xrRender_VK"
     entry = renderer / "xrRender_R2.cpp"
+    test_hw = renderer / "r2_test_hw.cpp"
     if not entry.is_file():
         raise FileNotFoundError(entry)
+    if not test_hw.is_file():
+        raise FileNotFoundError(test_hw)
 
     text = entry.read_text(encoding="utf-8", errors="ignore")
     attach_match = re.search(
@@ -42,6 +58,12 @@ def harden(root: Path) -> None:
         text = text[:insert] + ACTIVATE_IMPL + text[insert:]
 
     entry.write_text(text, encoding="utf-8")
+
+    probe_text = test_hw.read_text(encoding="utf-8", errors="ignore")
+    if "xr_vk_bootstrap_probe()" not in probe_text:
+        raise RuntimeError("Vulkan loader-lock hardening: capability probe implementation missing")
+    test_hw.write_text(PROBE_SOURCE, encoding="utf-8")
+
     final = entry.read_text(encoding="utf-8", errors="ignore")
     final_attach = re.search(
         r"case\s+DLL_PROCESS_ATTACH\s*:\s*(?P<body>.*?)(?=\s*break\s*;)",
@@ -73,6 +95,15 @@ def harden(root: Path) -> None:
     if min(activate, bind, console, return_true) < 0 or not activate < bind < console < return_true:
         raise RuntimeError("Vulkan loader-lock hardening validation: post-load renderer activation export incomplete")
 
+    probe_final = test_hw.read_text(encoding="utf-8", errors="ignore")
+    for token in (
+        'extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_capability_probe()',
+        "return xr_vk_bootstrap_probe() ? TRUE : FALSE;",
+        "return xrRender_vk_capability_probe();",
+    ):
+        if token not in probe_final:
+            raise RuntimeError(f"Vulkan loader-lock hardening validation: capability export missing {token}")
+
     lifecycle = renderer / "r2.cpp"
     if not lifecycle.is_file():
         raise FileNotFoundError(lifecycle)
@@ -87,7 +118,7 @@ def harden(root: Path) -> None:
     if "if (!window_handle || !xr_vk_bootstrap_initialize())" not in bootstrap_text:
         raise RuntimeError("Vulkan loader-lock hardening validation: attach_window is not the lazy bootstrap boundary")
 
-    print("[vulkan-loader-lock] DllMain is side-effect-free; renderer activation is an explicit post-load export")
+    print("[vulkan-loader-lock] side-effect-free DllMain + exported post-load capability/activation handshake installed")
 
 
 def main() -> int:
