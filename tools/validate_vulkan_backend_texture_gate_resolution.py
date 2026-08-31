@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from validate_vulkan_backend_descriptor_materialization import validate as validate_descriptor_materialization
+
 
 def validate(root: Path) -> None:
     source = root.resolve() / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
@@ -23,26 +25,35 @@ def validate(root: Path) -> None:
         "xr_vk_resolved_texture_snapshot resolved_textures;",
         "xr_vk_resolve_texture_snapshot(pixel_textures, pixel_texture_count,",
         "vertex_textures, vertex_texture_count, resolved_textures)",
+        "xr_vk_upload_constant_snapshot(vertex_constants, pixel_constants, uniform_offset, uniform_range)",
+        "xr_vk_allocate_snapshot_descriptor(g_uniform_buffer, uniform_offset, uniform_range",
+        "return descriptor_set != VK_NULL_HANDLE;",
     )
     for token in required:
         if token not in gate:
-            raise RuntimeError(f"Vulkan backend texture gate resolution missing: {token}")
+            raise RuntimeError(f"Vulkan backend texture/descriptor gate missing: {token}")
 
-    cardinality = gate.index("pixel_texture_count != 16 || vertex_texture_count != 5")
-    snapshot = gate.index("xr_vk_resolved_texture_snapshot resolved_textures;", cardinality)
-    resolve = gate.index("xr_vk_resolve_texture_snapshot", snapshot)
-    final_fail_closed = gate.rfind("return false;")
-    if not cardinality < snapshot < resolve < final_fail_closed:
-        raise RuntimeError("Vulkan backend texture gate resolution ordering is unsafe")
+    ordered = (
+        "pixel_texture_count != 16 || vertex_texture_count != 5",
+        "xr_vk_resolved_texture_snapshot resolved_textures;",
+        "xr_vk_resolve_texture_snapshot",
+        "xr_vk_upload_constant_snapshot",
+        "xr_vk_allocate_snapshot_descriptor",
+        "return descriptor_set != VK_NULL_HANDLE;",
+    )
+    positions = [gate.index(token) for token in ordered]
+    if positions != sorted(positions):
+        raise RuntimeError("Vulkan backend texture/descriptor gate ordering is unsafe")
 
-    if "return true;" in gate:
-        raise RuntimeError("Vulkan backend texture gate opened before descriptor materialization")
+    if "This gate is deliberately fail-closed" in gate:
+        raise RuntimeError("Vulkan backend texture gate still contains the pre-materialization fail-closed path")
 
-    print("[validate-vulkan-backend-texture-gate] exact texture snapshot resolution is live inside the gate and still fail-closed")
+    validate_descriptor_materialization(root)
+    print("[validate-vulkan-backend-texture-gate] exact texture resolution now feeds live per-draw descriptor materialization")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate Vulkan backend texture snapshot resolution and fail-closed ordering.")
+    parser = argparse.ArgumentParser(description="Validate Vulkan backend texture resolution and live descriptor materialization ordering.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
