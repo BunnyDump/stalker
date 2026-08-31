@@ -41,10 +41,12 @@ def harden(root: Path) -> None:
             return false;
 
         // The mirror preserves the original D3D byte offsets, so bind the mirrored VB at zero
-        // and keep D3D9 BaseVertexIndex as Vulkan vertexOffset.  MinVertexIndex/start_vertex is
+        // and keep D3D9 BaseVertexIndex as Vulkan vertexOffset. MinVertexIndex/start_vertex is
         // only a range hint and must not be folded into the Vulkan binding offset.
+        // Descriptor materialization is intentionally fail-closed here: the packet factory now
+        // requires an exact per-draw descriptor set, which is wired by the resource snapshot layer.
         xr_vk_indexed_draw_packet draw = {};
-        if (!xr_vk_make_indexed_draw_packet(pipeline, D3DFMT_INDEX16, primitive, start_index,
+        if (!xr_vk_make_indexed_draw_packet(pipeline, VK_NULL_HANDLE, D3DFMT_INDEX16, primitive, start_index,
                 primitive_count, static_cast<s32>(base_vertex), 0, 0, draw))
             return false;
         return xr_vk_record_indexed_draw(command_buffer, draw);
@@ -119,7 +121,7 @@ def harden(root: Path) -> None:
         "xr_vk_record_dynamic_indexed_backend_draw",
         "xr_vk_dynamic_vertex_range_ready(vertex_buffer, first_vertex, vertex_count",
         "xr_vk_dynamic_index_range_ready(index_buffer, start_index, index_count",
-        "xr_vk_make_indexed_draw_packet(pipeline, D3DFMT_INDEX16",
+        "xr_vk_make_indexed_draw_packet(pipeline, VK_NULL_HANDLE, D3DFMT_INDEX16, primitive",
         "xr_vk_record_indexed_draw(command_buffer, draw)",
         "xr_vk_record_dynamic_backend_draw",
         "g_vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex, &bind_offset)",
@@ -131,7 +133,7 @@ def harden(root: Path) -> None:
         if token not in final:
             raise RuntimeError(f"Vulkan backend dynamic draw validation failed: missing {token}")
 
-    print("[vulkan-backend-dynamic-draw] live CBackend dynamic VB/IB draws now record into the active Vulkan command buffer; unsupported/static geometry remains fail-closed on D3D9")
+    print("[vulkan-backend-dynamic-draw] dynamic VB/IB recording remains descriptor-safe and fail-closed until exact per-draw snapshot descriptors are supplied")
 
 
 def main() -> int:
