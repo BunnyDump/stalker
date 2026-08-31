@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from validate_vulkan_descriptor_snapshot_schema import validate as validate_vulkan_descriptor_snapshot_schema
+
 
 GATE_CARDINALITY = '''        if (!vertex_constants || !pixel_constants || !pixel_textures || !vertex_textures ||
             pixel_texture_count != 16 || vertex_texture_count != 5)
@@ -55,7 +57,12 @@ def harden(root: Path) -> None:
     if resolve >= fail_closed:
         raise RuntimeError("Vulkan backend texture gate opened or reordered before descriptor materialization")
 
-    print("[vulkan-backend-texture-gate] exact 16 PS + 5 VS Vulkan texture resolution integrated into production gate; draw remains fail-closed pending descriptor materialization")
+    # At this integration point the descriptor schema, constant snapshot, texture snapshot and
+    # production resource gate all exist. Validate them together so future helper changes cannot
+    # silently desynchronize the shader ABI from the draw path.
+    validate_vulkan_descriptor_snapshot_schema(root)
+
+    print("[vulkan-backend-texture-gate] exact 16 PS + 5 VS Vulkan texture resolution + full descriptor snapshot ABI validated; draw remains fail-closed pending descriptor materialization")
 
 
 def main() -> int:
