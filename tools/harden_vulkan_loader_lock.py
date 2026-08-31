@@ -62,26 +62,6 @@ def harden(root: Path) -> None:
     if "xr_vk_bootstrap_attach_window(Device.m_hWnd, Device.dwWidth, Device.dwHeight)" not in lifecycle_text:
         raise RuntimeError("Vulkan loader-lock hardening validation: deferred HWND bootstrap hook missing")
 
-    legacy_present_gate = 'xr_vk_bootstrap_runtime_ready() && strstr(Core.Params, "-vkpresent")'
-    if legacy_present_gate in lifecycle_text:
-        lifecycle_text = lifecycle_text.replace(legacy_present_gate, "xr_vk_bootstrap_runtime_ready()", 1)
-        lifecycle.write_text(lifecycle_text, encoding="utf-8")
-    lifecycle_text = lifecycle.read_text(encoding="utf-8", errors="ignore")
-    if 'strstr(Core.Params, "-vkpresent")' in lifecycle_text:
-        raise RuntimeError("Vulkan present activation validation: obsolete -vkpresent gate remains")
-
-    frame_start = lifecycle_text.find("void CRender::OnFrame()")
-    if frame_start < 0:
-        raise RuntimeError("Vulkan present activation validation: CRender::OnFrame missing")
-    frame_end = lifecycle_text.find("// Implementation", frame_start)
-    if frame_end < 0:
-        frame_end = frame_start + 1800
-    frame = lifecycle_text[frame_start:frame_end]
-    ready = frame.find("xr_vk_bootstrap_runtime_ready()")
-    present = frame.find("xr_vk_bootstrap_frame();", ready)
-    if ready < 0 or present < 0 or ready >= present:
-        raise RuntimeError("Vulkan present activation validation: ready-gated frame present hook missing")
-
     bootstrap = renderer / "vk_bootstrap.cpp"
     if not bootstrap.is_file():
         raise FileNotFoundError(bootstrap)
@@ -89,11 +69,11 @@ def harden(root: Path) -> None:
     if "if (!window_handle || !xr_vk_bootstrap_initialize())" not in bootstrap_text:
         raise RuntimeError("Vulkan loader-lock hardening validation: attach_window is not the lazy bootstrap boundary")
 
-    print("[vulkan-startup] DllMain is bootstrap-free; initialization is deferred to HWND attach; runtime-ready Vulkan present is active")
+    print("[vulkan-loader-lock] DllMain is bootstrap-free; Vulkan initialization is deferred to HWND attach")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Keep Vulkan bootstrap outside DllMain and make runtime readiness drive presentation.")
+    parser = argparse.ArgumentParser(description="Keep Vulkan loader/bootstrap work out of Windows DllMain loader lock.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
