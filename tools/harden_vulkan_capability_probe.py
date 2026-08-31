@@ -6,6 +6,7 @@ from pathlib import Path
 from enable_vulkan_device_selection import enable_device_selection
 from enable_vulkan_runtime_stack import install_runtime_stack
 from harden_vulkan_loader_lock import harden as harden_vulkan_loader_lock
+from harden_vulkan_window_attach_failure import harden as harden_vulkan_window_attach_failure
 from validate_vulkan_extensions import install_extension_validation
 from enable_vulkan_render_core import install_render_core
 from harden_vulkan_upload_capacity import harden as harden_vulkan_upload_capacity
@@ -128,6 +129,7 @@ def harden(root: Path) -> None:
     install_runtime_stack(root)
     harden_vulkan_loader_lock(root)
     install_extension_validation(root)
+    harden_vulkan_window_attach_failure(root)
     install_render_core(root)
     harden_vulkan_upload_capacity(root)
     install_pipeline(root)
@@ -185,7 +187,7 @@ def harden(root: Path) -> None:
     validate_vulkan_texture_snapshot_resolution(root)
     validate_vulkan_uniform_stream(root)
     validate_vulkan_pipeline_generation(root)
-    print("[vulkan-capability] validated end-to-end -vulkan startup + loader-lock-safe deferred initialization + automatic Render-scoped present + lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + active command buffer + backend active-frame gating + canonical D3D9 state snapshots + bytecode-stable shader identity + semantic pipeline registry + validated SPIR-V sidecars + dynamic/static geometry bridges + exact per-draw descriptors + texture ownership/lifetime + transactional swapchain + D3D9 fallback verified")
+    print("[vulkan-capability] validated end-to-end -vulkan startup + loader-lock-safe deferred initialization + failure-atomic HWND attach + automatic Render-scoped present + lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + active command buffer + backend active-frame gating + canonical D3D9 state snapshots + bytecode-stable shader identity + semantic pipeline registry + validated SPIR-V sidecars + dynamic/static geometry bridges + exact per-draw descriptors + texture ownership/lifetime + transactional swapchain + D3D9 fallback verified")
 
 
 def main() -> int:
