@@ -26,16 +26,23 @@ def validate(root: Path) -> None:
         if token not in text:
             raise RuntimeError(f"Vulkan uniform stream validation failed: missing {token}")
 
-    frame = text.find("bool xr_vk_bootstrap_frame()")
-    wait = text.find("g_vkWaitForFences", frame)
-    reset = text.find("xr_vk_reset_uniform_stream();", frame)
-    acquire = text.find("g_vkAcquireNextImageKHR", frame)
-    if min(frame, wait, reset, acquire) < 0 or not (frame < wait < reset < acquire):
-        raise RuntimeError("Vulkan uniform stream validation failed: per-frame reset is not fence-safe")
+    begin_start = text.find("bool xr_vk_bootstrap_begin_frame()")
+    end_start = text.find("bool xr_vk_bootstrap_end_frame()", begin_start)
+    if begin_start < 0 or end_start < 0:
+        raise RuntimeError("Vulkan uniform stream validation failed: split frame lifecycle missing")
+    begin = text[begin_start:end_start]
+    wait = begin.find("g_vkWaitForFences")
+    reset = begin.find("xr_vk_reset_uniform_stream();", wait)
+    acquire = begin.find("g_vkAcquireNextImageKHR", reset)
+    if min(wait, reset, acquire) < 0 or not wait < reset < acquire:
+        raise RuntimeError("Vulkan uniform stream validation failed: begin-frame reset is not fence-safe")
+
+    release = begin.find("xr_vk_release_frame_descriptors()", wait)
+    if release >= 0 and not wait < release < reset:
+        raise RuntimeError("Vulkan uniform stream validation failed: descriptor retirement/reset ordering is unsafe")
 
     validate_vulkan_descriptor_snapshot_schema(root)
-
-    print("[validate-vulkan-uniforms] aligned upload path, fence-safe reset, 8192-byte constant snapshot and UBO+PS[16]+VS[5] descriptor ABI verified")
+    print("[validate-vulkan-uniforms] aligned uploads + split-frame fence-safe reset + descriptor ABI verified")
 
 
 def main() -> int:
