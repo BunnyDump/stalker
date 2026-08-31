@@ -10,23 +10,42 @@ def validate(root: Path) -> None:
     engine_api = root / "xr_3da" / "EngineAPI.cpp"
     renderer = root / "xr_3da" / "xrRender_VK"
     dll_entry = renderer / "xrRender_R2.cpp"
+    test_hw = renderer / "r2_test_hw.cpp"
     lifecycle = renderer / "r2.cpp"
     render = renderer / "r2_R_render.cpp"
     bootstrap = renderer / "vk_bootstrap.cpp"
-    for path in (engine_api, dll_entry, lifecycle, render, bootstrap):
+    for path in (engine_api, dll_entry, test_hw, lifecycle, render, bootstrap):
         if not path.is_file():
             raise FileNotFoundError(path)
 
     engine = engine_api.read_text(encoding="utf-8", errors="ignore")
-    for token in ('"xrRender_VK.dll"', 'strstr(Core.Params, "-vulkan")', "LoadLibrary(vk_name)"):
+    required_engine = (
+        '"xrRender_VK.dll"',
+        'strstr(Core.Params, "-vulkan")',
+        "LoadLibrary(vk_name)",
+        'GetProcAddress(hRender, "xrRender_vk_capability_probe")',
+        'GetProcAddress(hRender, "xrRender_vk_activate")',
+        "vk_probe()",
+        "vk_activate()",
+        "FreeLibrary(hRender)",
+        "hRender = 0;",
+    )
+    for token in required_engine:
         if token not in engine:
-            raise RuntimeError(f"Vulkan startup validation: engine selection path missing {token}")
+            raise RuntimeError(f"Vulkan startup validation: engine handshake missing {token}")
+
     vk_select = engine.find('strstr(Core.Params, "-vulkan")')
     vk_load = engine.find("LoadLibrary(vk_name)", vk_select)
-    r2_load = engine.find("LoadLibrary(r2_name)", vk_load)
+    probe_resolve = engine.find('GetProcAddress(hRender, "xrRender_vk_capability_probe")', vk_load)
+    activate_resolve = engine.find('GetProcAddress(hRender, "xrRender_vk_activate")', probe_resolve)
+    probe_call = engine.find("vk_probe()", activate_resolve)
+    activate_call = engine.find("vk_activate()", probe_call)
+    unload = engine.find("FreeLibrary(hRender)", activate_call)
+    r2_load = engine.find("LoadLibrary(r2_name)", unload)
     r1_load = engine.find("LoadLibrary(r1_name)", r2_load)
-    if min(vk_select, vk_load, r2_load, r1_load) < 0 or not vk_select < vk_load < r2_load < r1_load:
-        raise RuntimeError("Vulkan startup validation: Vulkan -> R2 -> R1 load/fallback order invalid")
+    positions = (vk_select, vk_load, probe_resolve, activate_resolve, probe_call, activate_call, unload, r2_load, r1_load)
+    if min(positions) < 0 or list(positions) != sorted(positions):
+        raise RuntimeError("Vulkan startup validation: load -> probe -> activate -> unload/fallback order invalid")
 
     entry = dll_entry.read_text(encoding="utf-8", errors="ignore")
     attach = re.search(
@@ -37,12 +56,35 @@ def validate(root: Path) -> None:
     if not attach:
         raise RuntimeError("Vulkan startup validation: DLL_PROCESS_ATTACH block missing")
     body = attach.group("body")
-    for token in ("xrRender_test_hw(", "xr_vk_bootstrap_", "LoadLibrary(", "LoadLibraryA(", "LoadLibraryW(", "FreeLibrary("):
+    forbidden_attach = (
+        "xrRender_test_hw",
+        "xrRender_vk_capability_probe",
+        "xrRender_vk_activate",
+        "::Render = &RImplementation",
+        "xrRender_initconsole",
+        "xr_vk_bootstrap_",
+        "LoadLibrary(",
+        "LoadLibraryA(",
+        "LoadLibraryW(",
+        "FreeLibrary(",
+    )
+    for token in forbidden_attach:
         if token in body:
-            raise RuntimeError(f"Vulkan startup validation: loader-lock work remains in DllMain: {token}")
-    for token in ("::Render = &RImplementation", "xrRender_initconsole()"):
-        if token not in body:
-            raise RuntimeError(f"Vulkan startup validation: renderer ABI binding missing {token}")
+            raise RuntimeError(f"Vulkan startup validation: side effect remains under loader lock: {token}")
+
+    activate = entry.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_activate()')
+    bind = entry.find("::Render = &RImplementation", activate)
+    console = entry.find("xrRender_initconsole()", bind)
+    activation_return = entry.find("return TRUE;", console)
+    if min(activate, bind, console, activation_return) < 0 or not activate < bind < console < activation_return:
+        raise RuntimeError("Vulkan startup validation: explicit post-load activation export incomplete")
+
+    probe_source = test_hw.read_text(encoding="utf-8", errors="ignore")
+    probe_export = probe_source.find('extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_capability_probe()')
+    bootstrap_probe = probe_source.find("xr_vk_bootstrap_probe()", probe_export)
+    legacy_wrapper = probe_source.find("BOOL xrRender_test_hw()", bootstrap_probe)
+    if min(probe_export, bootstrap_probe, legacy_wrapper) < 0 or not probe_export < bootstrap_probe < legacy_wrapper:
+        raise RuntimeError("Vulkan startup validation: exported capability probe/legacy wrapper incomplete")
 
     life = lifecycle.read_text(encoding="utf-8", errors="ignore")
     attach_call = "xr_vk_bootstrap_attach_window(Device.m_hWnd, Device.dwWidth, Device.dwHeight)"
@@ -69,11 +111,11 @@ def validate(root: Path) -> None:
     if not scope < ready < begin < end or not render_fn < scope_instance:
         raise RuntimeError("Vulkan startup validation: Render-scoped startup/present order invalid")
 
-    print("[validate-vulkan-startup] -vulkan selection + R2/R1 fallback + loader-lock-safe HWND init + automatic Render-scoped present verified")
+    print("[validate-vulkan-startup] -vulkan load + post-load capability/activation handshake + safe unload/R2/R1 fallback + HWND init + automatic Render-scoped present verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the complete XR_3DA -> xrRender_VK startup and present path.")
+    parser = argparse.ArgumentParser(description="Validate complete XR_3DA -> xrRender_VK capability-validated startup and present path.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
