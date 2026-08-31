@@ -3,8 +3,19 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from enable_vulkan_static_geometry_mirror import install as install_vulkan_static_geometry_mirror
+from harden_vulkan_static_geometry_lifecycle import harden as harden_vulkan_static_geometry_lifecycle
+from harden_vulkan_backend_static_draw import harden as harden_vulkan_backend_static_draw
+
 
 def harden(root: Path) -> None:
+    # Keep static level/model migration tied to the resource gate that already sits in the
+    # central capability pipeline. This avoids a second top-level integration point and
+    # guarantees static draws are never introduced without the same fail-closed policy.
+    install_vulkan_static_geometry_mirror(root)
+    harden_vulkan_static_geometry_lifecycle(root)
+    harden_vulkan_backend_static_draw(root)
+
     source = root.resolve() / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
     if not source.is_file():
         raise FileNotFoundError(source)
