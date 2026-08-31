@@ -91,6 +91,7 @@ jobs:
           python tools/fix_legacy_stl.py source
           python tools/fix_x64_abi.py source
           python tools/fix_x64_runtime_compat.py source
+          python tools/harden_vulkan_capability_probe.py source
 
       - name: Validate Vulkan frame and resource invariants
         shell: bash
@@ -143,6 +144,9 @@ jobs:
           grep -Fq 'bool xr_vk_transactional_recreate_swapchain(unsigned width, unsigned height)' "$vk"
           grep -Fq 'xr_vk_restore_swapchain_state(old_state);' "$vk"
           grep -Fq 'xr_vk_restore_swapchain_state(new_state);' "$vk"
+          grep -Fq 'XR_VK_TEXTURE_OWNER_CAPACITY = 8192' "$vk"
+          grep -Fq 'xr_vk_texture_resource_shader_readable' "$vk"
+          grep -Fq 'xr_vk_texture_snapshot_resolved' "$vk"
 
           python - <<'PY'
           from pathlib import Path
