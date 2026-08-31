@@ -15,6 +15,8 @@ REQUIRED_BINARIES = (
     "XR_3DA.exe",
     "xrCore.dll",
     "xrRender_VK.dll",
+    "xrRender_R2.dll",
+    "xrRender_R1.dll",
 )
 
 
@@ -147,7 +149,7 @@ def validate(root: Path) -> int:
         fail(f"RC6 release validation failed with {errors} problem(s)")
         return 1
 
-    print("RC6 release validation passed: x64 Vulkan engine + launch entry point + recursive runtime closure + sparse gamedata policy.")
+    print("RC6 release validation passed: x64 Vulkan engine + x64 R2/R1 fallback renderers + launch entry point + recursive runtime closure + sparse gamedata policy.")
     return 0
 
 
