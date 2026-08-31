@@ -50,6 +50,7 @@ from harden_vulkan_backend_dynamic_draw import harden as harden_vulkan_backend_d
 from harden_vulkan_backend_resource_gate import harden as harden_vulkan_backend_resource_gate
 from harden_vulkan_backend_resource_snapshot import harden as harden_vulkan_backend_resource_snapshot
 from harden_vulkan_backend_texture_gate_resolution import harden as harden_vulkan_backend_texture_gate_resolution
+from harden_vulkan_backend_descriptor_materialization import harden as harden_vulkan_backend_descriptor_materialization
 from validate_vulkan_backend_dynamic_draw import validate as validate_vulkan_backend_dynamic_draw
 from validate_vulkan_backend_resource_snapshot import validate as validate_vulkan_backend_resource_snapshot
 from validate_vulkan_backend_texture_gate_resolution import validate as validate_vulkan_backend_texture_gate_resolution
@@ -166,6 +167,7 @@ def harden(root: Path) -> None:
     harden_vulkan_backend_resource_gate(root)
     harden_vulkan_backend_resource_snapshot(root)
     harden_vulkan_backend_texture_gate_resolution(root)
+    harden_vulkan_backend_descriptor_materialization(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
     validate_vulkan_stream_lifetime(root)
@@ -179,7 +181,7 @@ def harden(root: Path) -> None:
     validate_vulkan_texture_snapshot_resolution(root)
     validate_vulkan_uniform_stream(root)
     validate_vulkan_pipeline_generation(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + R2 Render-scoped begin/end render-pass recording + active command buffer + backend active-frame gating + canonical D3D9 depth/cull/blend/color-write state snapshots + D3D9 bytecode-stable VS/PS identity + semantic declaration/stride/topology/render-pass/state keyed backend pipeline registry + bytecode-keyed validated SPIR-V sidecar materialization with canonical render state + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + topology-correct indexed draw packets + resource-gated CBackend dynamic VB/IB Vulkan recording with exact constant/texture resource snapshots, bounded legacy CTexture owner-to-Vulkan sampled-image registry with stale-resource cleanup + exact 16 PS/5 VS shader-readable texture snapshot resolution wired into the production gate while descriptor materialization remains fail-closed, release-safe VS/PS identity and fail-closed D3D fallback + 8192-set descriptor capacity + persistent material/device resources across resize + exact oldSwapchain retirement boundary + clean recovery + swapchain format continuity + render-pass generation-owned graphics pipelines + stale draw rejection + material descriptor binding + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + safe present state + resilient Win32 swapchain recreation + aligned per-frame uniform stream verified")
+    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + R2 Render-scoped begin/end render-pass recording + active command buffer + backend active-frame gating + canonical D3D9 depth/cull/blend/color-write state snapshots + D3D9 bytecode-stable VS/PS identity + semantic declaration/stride/topology/render-pass/state keyed backend pipeline registry + bytecode-keyed validated SPIR-V sidecar materialization with canonical render state + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + topology-correct indexed draw packets + exact per-draw SHOC UBO + PS[16] + VS[5] descriptor materialization for dynamic/static indexed/non-indexed Vulkan draws with post-fence retirement + D3D9 fallback for unsupported geometry/resources + bounded CTexture owner registry + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + resilient swapchain recreation + 64 MiB aligned per-frame uniform arena verified")
 
 
 def main() -> int:
