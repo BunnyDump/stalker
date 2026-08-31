@@ -5,9 +5,30 @@ from pathlib import Path
 
 
 def harden(root: Path) -> None:
-    source = root.resolve() / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
-    if not source.is_file():
-        raise FileNotFoundError(source)
+    renderer = root.resolve() / "xr_3da" / "xrRender_VK"
+    source = renderer / "vk_bootstrap.cpp"
+    render = renderer / "r2_R_render.cpp"
+    for path in (source, render):
+        if not path.is_file():
+            raise FileNotFoundError(path)
+
+    # xrRender_VK is selected explicitly by the engine. Once its Vulkan runtime is
+    # ready, the real R2 Render() scope must own begin/end/present without requiring
+    # a second hidden command-line switch.
+    render_text = render.read_text(encoding="utf-8", errors="ignore")
+    legacy_gate = 'xr_vk_bootstrap_runtime_ready() && strstr(Core.Params, "-vkpresent")'
+    if legacy_gate in render_text:
+        render_text = render_text.replace(legacy_gate, "xr_vk_bootstrap_runtime_ready()", 1)
+        render.write_text(render_text, encoding="utf-8")
+    render_text = render.read_text(encoding="utf-8", errors="ignore")
+    if 'strstr(Core.Params, "-vkpresent")' in render_text:
+        raise RuntimeError("Vulkan frame activation hardening: obsolete -vkpresent gate remains")
+    scope = render_text.find("class xr_vk_render_frame_scope")
+    begin = render_text.find("xr_vk_bootstrap_begin_frame()", scope)
+    ready = render_text.rfind("xr_vk_bootstrap_runtime_ready()", scope, begin)
+    end = render_text.find("xr_vk_bootstrap_end_frame()", begin)
+    if min(scope, ready, begin, end) < 0 or not scope < ready < begin < end:
+        raise RuntimeError("Vulkan frame activation hardening: runtime-ready RAII frame scope is incomplete")
 
     text = source.read_text(encoding="utf-8")
 
@@ -70,11 +91,11 @@ def harden(root: Path) -> None:
         if min(runtime_guard, command_guard, final_fallback) < 0 or not runtime_guard < command_guard < final_fallback:
             raise RuntimeError(f"Vulkan backend active-frame validation failed in {label} export: guard order invalid")
 
-    print("[vulkan-backend-active-frame] backend Vulkan draws require the live R2 render-pass command buffer")
+    print("[vulkan-backend-active-frame] renderer-ready R2 frame presentation + live command-buffer draw gating installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Reject Vulkan backend draw dispatch outside the active R2 frame command buffer.")
+    parser = argparse.ArgumentParser(description="Activate Vulkan presentation on renderer readiness and reject draws outside the active R2 frame.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
