@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from validate_vulkan_descriptor_snapshot_schema import validate as validate_vulkan_descriptor_snapshot_schema
+
 
 def validate(root: Path) -> None:
     source = root.resolve() / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
@@ -31,7 +33,9 @@ def validate(root: Path) -> None:
     if min(frame, wait, reset, acquire) < 0 or not (frame < wait < reset < acquire):
         raise RuntimeError("Vulkan uniform stream validation failed: per-frame reset is not fence-safe")
 
-    print("[validate-vulkan-uniforms] aligned upload path and fence-safe per-frame reset verified")
+    validate_vulkan_descriptor_snapshot_schema(root)
+
+    print("[validate-vulkan-uniforms] aligned upload path, fence-safe reset, 8192-byte constant snapshot and UBO+PS[16]+VS[5] descriptor ABI verified")
 
 
 def main() -> int:
