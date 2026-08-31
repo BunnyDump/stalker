@@ -5,6 +5,7 @@ from pathlib import Path
 
 from enable_vulkan_device_selection import enable_device_selection
 from enable_vulkan_runtime_stack import install_runtime_stack
+from harden_vulkan_loader_lock import harden as harden_vulkan_loader_lock
 from validate_vulkan_extensions import install_extension_validation
 from enable_vulkan_render_core import install_render_core
 from harden_vulkan_upload_capacity import harden as harden_vulkan_upload_capacity
@@ -124,6 +125,7 @@ def harden(root: Path) -> None:
 
     enable_device_selection(root)
     install_runtime_stack(root)
+    harden_vulkan_loader_lock(root)
     install_extension_validation(root)
     install_render_core(root)
     harden_vulkan_upload_capacity(root)
@@ -181,7 +183,7 @@ def harden(root: Path) -> None:
     validate_vulkan_texture_snapshot_resolution(root)
     validate_vulkan_uniform_stream(root)
     validate_vulkan_pipeline_generation(root)
-    print("[vulkan-capability] lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + R2 Render-scoped begin/end render-pass recording + active command buffer + backend active-frame gating + canonical D3D9 depth/cull/blend/color-write state snapshots + D3D9 bytecode-stable VS/PS identity + semantic declaration/stride/topology/render-pass/state keyed backend pipeline registry + bytecode-keyed validated SPIR-V sidecar materialization with canonical render state + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + topology-correct indexed draw packets + exact per-draw SHOC UBO + PS[16] + VS[5] descriptor materialization for dynamic/static indexed/non-indexed Vulkan draws with post-fence retirement + D3D9 fallback for unsupported geometry/resources + bounded CTexture owner registry + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + resilient swapchain recreation + 64 MiB aligned per-frame uniform arena verified")
+    print("[vulkan-capability] loader-lock-safe deferred initialization + lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + R2 Render-scoped begin/end render-pass recording + active command buffer + backend active-frame gating + canonical D3D9 depth/cull/blend/color-write state snapshots + D3D9 bytecode-stable VS/PS identity + semantic declaration/stride/topology/render-pass/state keyed backend pipeline registry + bytecode-keyed validated SPIR-V sidecar materialization with canonical render state + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + topology-correct indexed draw packets + exact per-draw SHOC UBO + PS[16] + VS[5] descriptor materialization for dynamic/static indexed/non-indexed Vulkan draws with post-fence retirement + D3D9 fallback for unsupported geometry/resources + bounded CTexture owner registry + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + resilient swapchain recreation + 64 MiB aligned per-frame uniform arena verified")
 
 
 def main() -> int:
