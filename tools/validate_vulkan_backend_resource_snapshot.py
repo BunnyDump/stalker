@@ -41,24 +41,34 @@ def validate(root: Path) -> None:
     if "pixel_texture_count != 16 || vertex_texture_count != 5" not in vk:
         raise RuntimeError("Vulkan resource gate does not verify SHOC PS/VS texture-slot cardinality")
     if vk.count("xr_vk_backend_draw_resources_ready(vertex_constants, pixel_constants, pixel_textures, pixel_texture_count") != 2:
-        raise RuntimeError("indexed/non-indexed production draws do not both use the resource snapshot gate")
+        raise RuntimeError("indexed/non-indexed production draws do not both materialize the exact resource snapshot")
 
-    # Safety invariant: until CTexture -> VkImage and constant-cache -> descriptor materialization
-    # are implemented, the gate must remain fail-closed and the original D3D9 fallback must exist.
     gate_start = vk.index(gate_signature)
     gate_end = vk.index("    bool xr_vk_record_dynamic_indexed_backend_draw", gate_start)
     gate = vk[gate_start:gate_end]
-    if "return false;" not in gate:
-        raise RuntimeError("resource snapshot gate was opened before descriptor materialization became explicit")
+    ordered = (
+        "xr_vk_resolve_texture_snapshot",
+        "xr_vk_upload_constant_snapshot",
+        "xr_vk_allocate_snapshot_descriptor",
+        "return descriptor_set != VK_NULL_HANDLE;",
+    )
+    positions = [gate.find(token) for token in ordered]
+    if any(pos < 0 for pos in positions) or positions != sorted(positions):
+        raise RuntimeError("Vulkan resource snapshot gate does not resolve textures, upload constants and materialize descriptors in order")
+
+    # Vulkan is now allowed to execute only after exact descriptor materialization succeeds;
+    # unsupported/unmirrored cases still retain the original D3D9 fallback.
+    if "This gate is deliberately fail-closed" in gate:
+        raise RuntimeError("stale fail-closed resource gate remains after descriptor materialization")
     for token in ("DrawIndexedPrimitive", "DrawPrimitive"):
         if token not in runtime:
-            raise RuntimeError(f"safe D3D9 fallback unexpectedly removed before full Vulkan resource migration: {token}")
+            raise RuntimeError(f"safe D3D9 fallback unexpectedly removed during Vulkan resource migration: {token}")
 
-    print("[validate-vulkan-backend-resources] production CBackend dispatch carries exact constant caches and all 21 texture slots; descriptor gate remains intentionally fail-closed")
+    print("[validate-vulkan-backend-resources] exact constant caches + all 21 texture slots feed live descriptor materialization while D3D9 fallback remains")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the SHOC CBackend -> Vulkan per-draw resource snapshot contract.")
+    parser = argparse.ArgumentParser(description="Validate the SHOC CBackend -> Vulkan per-draw resource snapshot and descriptor contract.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
