@@ -116,7 +116,6 @@ def validate(root: Path) -> None:
         '#include "vk_bootstrap.h"',
         "class xr_vk_render_frame_scope",
         "xr_vk_bootstrap_runtime_ready()",
-        'strstr(Core.Params, "-vkpresent")',
         "active_ = xr_vk_bootstrap_begin_frame();",
         "xr_vk_bootstrap_end_frame()",
         "xr_vk_render_frame_scope vk_frame_scope;",
@@ -125,6 +124,15 @@ def validate(root: Path) -> None:
     for token in render_required:
         if token not in r:
             raise RuntimeError(f"Vulkan frame-path validation failed: R2 render scope missing {token}")
+    if 'strstr(Core.Params, "-vkpresent")' in r:
+        raise RuntimeError("Vulkan frame-path validation failed: obsolete -vkpresent activation gate remains")
+
+    scope_class = r.find("class xr_vk_render_frame_scope")
+    ready_pos = r.find("xr_vk_bootstrap_runtime_ready()", scope_class)
+    begin_pos = r.find("active_ = xr_vk_bootstrap_begin_frame();", ready_pos)
+    end_pos = r.find("xr_vk_bootstrap_end_frame()", begin_pos)
+    if min(scope_class, ready_pos, begin_pos, end_pos) < 0 or not scope_class < ready_pos < begin_pos < end_pos:
+        raise RuntimeError("Vulkan frame-path validation failed: renderer-ready RAII activation order invalid")
 
     render_fn = r.find("void CRender::Render()")
     scope_pos = r.find("xr_vk_render_frame_scope vk_frame_scope;", render_fn)
@@ -135,7 +143,7 @@ def validate(root: Path) -> None:
     if "xr_vk_bootstrap_frame();" in life:
         raise RuntimeError("Vulkan frame-path validation failed: stale OnFrame presentation hook remains")
 
-    print("[vulkan-frame-validate] R2 Render-scoped begin/end render pass, active command buffer, dynamic state, safe submit/present and RAII early-return coverage verified")
+    print("[vulkan-frame-validate] renderer-ready R2 Render-scoped begin/end render pass, active command buffer, dynamic state, safe submit/present and RAII early-return coverage verified")
 
 
 def main() -> int:
