@@ -86,6 +86,19 @@ def validate(root: Path) -> None:
     if min(probe_export, bootstrap_probe, legacy_wrapper) < 0 or not probe_export < bootstrap_probe < legacy_wrapper:
         raise RuntimeError("Vulkan startup validation: exported capability probe/legacy wrapper incomplete")
 
+    vk = bootstrap.read_text(encoding="utf-8", errors="ignore")
+    helper = vk.find("bool xr_vk_selected_device_supports_swapchain()")
+    probe_fn = vk.find("bool xr_vk_bootstrap_probe()", helper)
+    graphics_gate = vk.find("g_graphics_queue_family != ~0u", probe_fn)
+    swapchain_gate = vk.find("xr_vk_selected_device_supports_swapchain()", graphics_gate)
+    shutdown = vk.find("xr_vk_bootstrap_shutdown();", swapchain_gate)
+    if min(helper, probe_fn, graphics_gate, swapchain_gate, shutdown) < 0:
+        raise RuntimeError("Vulkan startup validation: pre-activation VK_KHR_swapchain gate incomplete")
+    if not helper < probe_fn < graphics_gate < swapchain_gate < shutdown:
+        raise RuntimeError("Vulkan startup validation: capability probe/swapchain/shutdown ordering invalid")
+    if "vkEnumerateDeviceExtensionProperties" not in vk or "VK_KHR_SWAPCHAIN_EXTENSION_NAME" not in vk:
+        raise RuntimeError("Vulkan startup validation: selected-device extension enumeration missing")
+
     life = lifecycle.read_text(encoding="utf-8", errors="ignore")
     attach_call = "xr_vk_bootstrap_attach_window(Device.m_hWnd, Device.dwWidth, Device.dwHeight)"
     if attach_call not in life:
@@ -93,7 +106,6 @@ def validate(root: Path) -> None:
     if "xr_vk_bootstrap_frame();" in life:
         raise RuntimeError("Vulkan startup validation: obsolete OnFrame present hook remains")
 
-    vk = bootstrap.read_text(encoding="utf-8", errors="ignore")
     if "if (!window_handle || !xr_vk_bootstrap_initialize())" not in vk:
         raise RuntimeError("Vulkan startup validation: HWND attach is not the lazy initialization boundary")
 
@@ -111,7 +123,7 @@ def validate(root: Path) -> None:
     if not scope < ready < begin < end or not render_fn < scope_instance:
         raise RuntimeError("Vulkan startup validation: Render-scoped startup/present order invalid")
 
-    print("[validate-vulkan-startup] -vulkan load + post-load capability/activation handshake + safe unload/R2/R1 fallback + HWND init + automatic Render-scoped present verified")
+    print("[validate-vulkan-startup] post-load probe/activate + pre-activation swapchain capability + safe unload/R2/R1 fallback + HWND init + Render-scoped present verified")
 
 
 def main() -> int:
