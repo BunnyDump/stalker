@@ -75,6 +75,8 @@ def validate(root: Path) -> None:
         "source != g_stream_vertex_source", "source != g_stream_index_source",
         "begin < g_stream_vertex_valid_begin || end > g_stream_vertex_valid_end",
         "begin < g_stream_index_valid_begin || end > g_stream_index_valid_end",
+        "begin > g_stream_vertex_valid_end || end < g_stream_vertex_valid_begin",
+        "begin > g_stream_index_valid_end || end < g_stream_index_valid_begin",
     ):
         if token not in vk:
             raise RuntimeError(f"dynamic stream association Vulkan validation failed: missing {token}")
@@ -86,6 +88,21 @@ def validate(root: Path) -> None:
     backend_start = vk.find('xrRender_vk_backend_draw_indexed', index_range_start)
     if min(vertex_upload_start, index_upload_start, vertex_range_start, index_range_start, backend_start) < 0:
         raise RuntimeError("dynamic stream association Vulkan validation failed: helper/export ordering missing")
+
+    # Disjoint NOOVERWRITE writes must restart the exact valid interval. Otherwise bytes
+    # that were never mirrored could be accepted by a later draw range check.
+    for prefix in ("vertex", "index"):
+        condition = f"begin > g_stream_{prefix}_valid_end || end < g_stream_{prefix}_valid_begin"
+        pos = vk.find(condition)
+        if pos < 0:
+            raise RuntimeError(f"dynamic stream association validation failed: {prefix} gap condition missing")
+        block = vk[pos:pos + 700]
+        for assignment in (
+            f"g_stream_{prefix}_valid_begin = begin;",
+            f"g_stream_{prefix}_valid_end = end;",
+        ):
+            if assignment not in block:
+                raise RuntimeError(f"dynamic stream association validation failed: {prefix} gap does not reset exact interval")
 
     destroy_start = vk.find("void xr_vk_destroy_frame_resources()")
     destroy_end = vk.find("void xr_vk_destroy_window_runtime()", destroy_start)
@@ -105,7 +122,7 @@ def validate(root: Path) -> None:
     if "static_cast<VkDeviceSize>(first_index) * sizeof(u16)" not in vk:
         raise RuntimeError("dynamic stream association validation failed: SHOC dynamic index stride is not explicit")
 
-    print("[vulkan-dynamic-stream-association] WRITEONLY Lock/Unlock upload order + source/discard/range identity + shutdown reset verified")
+    print("[vulkan-dynamic-stream-association] WRITEONLY Lock/Unlock upload order + gap-safe source/discard/range identity + shutdown reset verified")
 
 
 def main() -> int:
