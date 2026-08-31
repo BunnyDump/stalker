@@ -56,6 +56,23 @@ def parse_overlay_manifest(path: Path) -> set[str]:
     return set(files)
 
 
+def validate_vulkan_launcher(root: Path) -> list[str]:
+    errors: list[str] = []
+    launcher = root / "START_VULKAN.bat"
+    if not launcher.is_file():
+        return [f"missing Vulkan launch entry point: {launcher}"]
+    try:
+        text = launcher.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as exc:
+        return [f"cannot read Vulkan launch entry point {launcher}: {exc}"]
+    for token in ('bin\\XR_3DA.exe', '-vulkan'):
+        if token not in text:
+            errors.append(f"Vulkan launcher does not contain required token {token!r}")
+    if 'pushd "%~dp0"' not in text:
+        errors.append("Vulkan launcher does not anchor the working directory to the release root")
+    return errors
+
+
 def validate(root: Path) -> int:
     errors = 0
     bin_dir = root / "bin"
@@ -90,6 +107,13 @@ def validate(root: Path) -> int:
             fail(message)
         errors += len(runtime_errors)
 
+    launcher_errors = validate_vulkan_launcher(root)
+    for message in launcher_errors:
+        fail(message)
+    errors += len(launcher_errors)
+    if not launcher_errors:
+        print("OK: START_VULKAN.bat launches bin\\XR_3DA.exe with -vulkan from release root")
+
     try:
         declared = parse_overlay_manifest(overlay_manifest)
     except (OSError, ValueError) as exc:
@@ -123,13 +147,13 @@ def validate(root: Path) -> int:
         fail(f"RC6 release validation failed with {errors} problem(s)")
         return 1
 
-    print("RC6 release validation passed: x64 Vulkan engine + recursive runtime closure + sparse gamedata policy.")
+    print("RC6 release validation passed: x64 Vulkan engine + launch entry point + recursive runtime closure + sparse gamedata policy.")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("root", type=Path, help="Root directory containing bin/ and optional sparse gamedata/")
+    parser.add_argument("root", type=Path, help="Root directory containing bin/, START_VULKAN.bat and optional sparse gamedata/")
     args = parser.parse_args()
     return validate(args.root.resolve())
 
