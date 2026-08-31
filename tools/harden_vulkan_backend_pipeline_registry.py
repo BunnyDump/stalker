@@ -56,9 +56,15 @@ def harden(root: Path) -> None:
             return false;
 
         u64 hash = 1469598103934665603ull;
+        bool terminated = false;
         for (UINT i = 0; i < actual_count; ++i)
         {
             const D3DVERTEXELEMENT9& element = elements[i];
+            if (element.Stream == 0xff && element.Type == D3DDECLTYPE_UNUSED)
+            {
+                terminated = true;
+                break;
+            }
             const u32 fields[] = {
                 static_cast<u32>(element.Stream), static_cast<u32>(element.Offset),
                 static_cast<u32>(element.Type), static_cast<u32>(element.Method),
@@ -75,6 +81,8 @@ def harden(root: Path) -> None:
                 }
             }
         }
+        if (!terminated)
+            return false;
         identity = hash ? hash : 1ull;
         return true;
     }
@@ -210,6 +218,7 @@ def harden(root: Path) -> None:
         "VkPrimitiveTopology topology;", "u64 render_pass_generation;",
         "declaration->GetDeclaration(NULL, &count)",
         "xr_vk_build_vertex_input_layout(&elements[0], actual_count, vertex_stride, layout)",
+        "bool terminated = false;", "terminated = true;", "if (!terminated)",
         "xr_vk_backend_pipeline_key_equal",
         "xr_vk_make_backend_pipeline_key",
         "key.render_pass_generation = g_render_pass_generation;",
@@ -241,7 +250,7 @@ def harden(root: Path) -> None:
         if min(identity, key, lookup_pos, fallback) < 0 or not identity < key < lookup_pos < fallback:
             raise RuntimeError(f"Vulkan backend pipeline registry validation failed in {label} export: lookup order invalid")
 
-    print("[vulkan-backend-pipeline] bytecode/declaration/stride/topology/render-pass generation keyed fail-closed registry installed")
+    print("[vulkan-backend-pipeline] canonical declaration + bytecode/stride/topology/render-pass generation keyed fail-closed registry installed")
 
 
 def main() -> int:
