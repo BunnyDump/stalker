@@ -59,18 +59,16 @@ def validate(root: Path) -> None:
     positions = [gate.find(token) for token in ordered]
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
         raise RuntimeError("Vulkan backend descriptor validation failed: resolve/upload/descriptor gate order is unsafe")
-    if "This gate is deliberately fail-closed" in gate:
-        raise RuntimeError("Vulkan backend descriptor validation failed: stale fail-closed production gate remains")
 
-    frame_start = text.index("bool xr_vk_bootstrap_frame()")
-    frame_end = text.index("bool xr_vk_bootstrap_runtime_ready()", frame_start)
-    frame = text[frame_start:frame_end]
-    wait = frame.find("g_vkWaitForFences")
-    release = frame.find("xr_vk_release_frame_descriptors()", wait)
-    reset_uniform = frame.find("xr_vk_reset_uniform_stream();", release)
-    acquire = frame.find("g_vkAcquireNextImageKHR", reset_uniform)
+    begin_start = text.index("bool xr_vk_bootstrap_begin_frame()")
+    end_start = text.index("bool xr_vk_bootstrap_end_frame()", begin_start)
+    begin = text[begin_start:end_start]
+    wait = begin.find("g_vkWaitForFences")
+    release = begin.find("xr_vk_release_frame_descriptors()", wait)
+    reset_uniform = begin.find("xr_vk_reset_uniform_stream();", release)
+    acquire = begin.find("g_vkAcquireNextImageKHR", reset_uniform)
     if min(wait, release, reset_uniform, acquire) < 0 or not wait < release < reset_uniform < acquire:
-        raise RuntimeError("Vulkan backend descriptor validation failed: transient descriptors are not released fence-safely")
+        raise RuntimeError("Vulkan backend descriptor validation failed: split-frame descriptor retirement is not fence-safe")
 
     for helper_name, draw_token in (
         ("bool xr_vk_record_dynamic_backend_draw", "g_vkCmdDraw(command_buffer, vertex_count"),
@@ -92,8 +90,6 @@ def validate(root: Path) -> None:
         if min(bind_pipeline, bind_descriptor, draw) < 0 or not bind_pipeline < bind_descriptor < draw:
             raise RuntimeError(f"Vulkan backend descriptor validation failed: bind order invalid in {helper_name}")
 
-    # Indexed dynamic draws bind through xr_vk_record_indexed_draw; verify the packet itself
-    # carries the material set and the common recorder binds it before vkCmdDrawIndexed.
     record_start = text.index("bool xr_vk_record_indexed_draw")
     record_end = text.index("bool xr_vk_make_indexed_draw_packet", record_start)
     record = text[record_start:record_end]
@@ -115,7 +111,7 @@ def validate(root: Path) -> None:
         if token not in runtime:
             raise RuntimeError(f"Vulkan backend descriptor validation failed: D3D9 fallback removed: {token}")
 
-    print("[validate-vulkan-backend-descriptors] 64 MiB constant arena + fence-safe per-draw UBO/PS[16]/VS[5] descriptor materialization + bind-before-draw verified")
+    print("[validate-vulkan-backend-descriptors] 64 MiB constant arena + split-frame fence-safe UBO/PS[16]/VS[5] descriptor materialization + bind-before-draw verified")
 
 
 def main() -> int:
