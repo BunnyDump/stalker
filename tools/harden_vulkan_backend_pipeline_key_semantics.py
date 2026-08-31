@@ -37,6 +37,37 @@ def harden(root: Path) -> None:
         identity = hash ? hash : 1ull;
         return true;
 '''
+    canonical_without_count = r'''        u64 hash = 1469598103934665603ull;
+        bool terminated = false;
+        for (UINT i = 0; i < actual_count; ++i)
+        {
+            const D3DVERTEXELEMENT9& element = elements[i];
+            if (element.Stream == 0xff && element.Type == D3DDECLTYPE_UNUSED)
+            {
+                terminated = true;
+                break;
+            }
+            const u32 fields[] = {
+                static_cast<u32>(element.Stream), static_cast<u32>(element.Offset),
+                static_cast<u32>(element.Type), static_cast<u32>(element.Method),
+                static_cast<u32>(element.Usage), static_cast<u32>(element.UsageIndex)
+            };
+            for (u32 field = 0; field < sizeof(fields) / sizeof(fields[0]); ++field)
+            {
+                u32 value = fields[field];
+                for (u32 byte_index = 0; byte_index < sizeof(value); ++byte_index)
+                {
+                    hash ^= static_cast<u64>(value & 0xffu);
+                    hash *= 1099511628211ull;
+                    value >>= 8;
+                }
+            }
+        }
+        if (!terminated)
+            return false;
+        identity = hash ? hash : 1ull;
+        return true;
+'''
     new_loop = r'''        u64 hash = 1469598103934665603ull;
         bool terminated = false;
         u32 semantic_element_count = 0;
@@ -72,9 +103,12 @@ def harden(root: Path) -> None:
 '''
 
     if "u32 semantic_element_count = 0;" not in text:
-        if old_loop not in text:
+        if canonical_without_count in text:
+            text = text.replace(canonical_without_count, new_loop, 1)
+        elif old_loop in text:
+            text = text.replace(old_loop, new_loop, 1)
+        else:
             raise RuntimeError("Vulkan backend pipeline key semantics: declaration hash loop marker not found")
-        text = text.replace(old_loop, new_loop, 1)
 
     source.write_text(text, encoding="utf-8")
     final = source.read_text(encoding="utf-8")
@@ -103,7 +137,7 @@ def harden(root: Path) -> None:
     harden_vulkan_backend_stateblock_identity(root)
     harden_vulkan_backend_render_state_bridge(root)
 
-    print("[vulkan-backend-pipeline-key] semantic declaration hash + canonical D3D9 render-state identity isolation installed")
+    print("[vulkan-backend-pipeline-key] idempotent semantic declaration hash + canonical D3D9 render-state identity isolation installed")
 
 
 def main() -> int:
