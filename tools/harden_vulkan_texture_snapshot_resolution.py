@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from harden_vulkan_descriptor_schema import harden as harden_vulkan_descriptor_schema
+
 
 SNAPSHOT_BLOCK = r'''    enum
     {
@@ -92,7 +94,10 @@ def harden(root: Path) -> None:
     if final.count("struct xr_vk_resolved_texture_snapshot") != 1:
         raise RuntimeError("Vulkan texture snapshot resolution validation failed: duplicate materialization")
 
-    print("[vulkan-texture-snapshot] exact 16 PS + 5 VS CTexture snapshot resolver installed; null slots preserved and unresolved live textures fail closed")
+    # Descriptor arrays depend on the exact resolved 16 PS + 5 VS resource shape.
+    harden_vulkan_descriptor_schema(root)
+
+    print("[vulkan-texture-snapshot] exact 16 PS + 5 VS CTexture snapshot resolver + UBO/PS[16]/VS[5] descriptor schema installed; null slots preserved and unresolved live textures fail closed")
 
 
 def main() -> int:
