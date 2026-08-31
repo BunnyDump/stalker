@@ -60,6 +60,7 @@ from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 from validate_vulkan_geometry_bridge import validate as validate_vulkan_geometry_bridge
 from validate_vulkan_indexed_draw import validate as validate_vulkan_indexed_draw
 from validate_vulkan_material_descriptors import validate as validate_vulkan_material_descriptors
+from validate_vulkan_startup_path import validate as validate_vulkan_startup_path
 from validate_vulkan_texture_bridge import validate as validate_vulkan_texture_bridge
 from validate_vulkan_texture_snapshot_resolution import validate as validate_vulkan_texture_snapshot_resolution
 from validate_vulkan_uniform_stream import validate as validate_vulkan_uniform_stream
@@ -170,6 +171,7 @@ def harden(root: Path) -> None:
     harden_vulkan_backend_resource_snapshot(root)
     harden_vulkan_backend_texture_gate_resolution(root)
     harden_vulkan_backend_descriptor_materialization(root)
+    validate_vulkan_startup_path(root)
     validate_vulkan_frame_path(root)
     validate_vulkan_geometry_bridge(root)
     validate_vulkan_stream_lifetime(root)
@@ -183,11 +185,11 @@ def harden(root: Path) -> None:
     validate_vulkan_texture_snapshot_resolution(root)
     validate_vulkan_uniform_stream(root)
     validate_vulkan_pipeline_generation(root)
-    print("[vulkan-capability] loader-lock-safe deferred initialization + lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + R2 Render-scoped begin/end render-pass recording + active command buffer + backend active-frame gating + canonical D3D9 depth/cull/blend/color-write state snapshots + D3D9 bytecode-stable VS/PS identity + semantic declaration/stride/topology/render-pass/state keyed backend pipeline registry + bytecode-keyed validated SPIR-V sidecar materialization with canonical render state + dynamic state + draw entry points + D3D9 geometry bridge + native SGeometry/topology adapter + fence-safe dynamic vertex/index stream mirrors + topology-correct indexed draw packets + exact per-draw SHOC UBO + PS[16] + VS[5] descriptor materialization for dynamic/static indexed/non-indexed Vulkan draws with post-fence retirement + D3D9 fallback for unsupported geometry/resources + bounded CTexture owner registry + sampled texture bridge + block-aligned BC uploads + failure-safe frame fence + deferred GPU-safe texture destruction + resilient swapchain recreation + 64 MiB aligned per-frame uniform arena verified")
+    print("[vulkan-capability] validated end-to-end -vulkan startup + loader-lock-safe deferred initialization + automatic Render-scoped present + lifecycle-safe probe + native runtime + extension validation + render core + 64 MiB upload staging + SPIR-V pipeline + topology-aware graphics pipeline factory + active command buffer + backend active-frame gating + canonical D3D9 state snapshots + bytecode-stable shader identity + semantic pipeline registry + validated SPIR-V sidecars + dynamic/static geometry bridges + exact per-draw descriptors + texture ownership/lifetime + transactional swapchain + D3D9 fallback verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Make the Vulkan capability probe independent from the active renderer lifecycle.")
+    parser = argparse.ArgumentParser(description="Materialize and validate the complete RC6 Vulkan capability path.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
