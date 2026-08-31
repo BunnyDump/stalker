@@ -27,6 +27,8 @@ def validate(root: Path) -> None:
         "VkDescriptorSet& descriptor_set",
         "descriptor_set = VK_NULL_HANDLE;",
         "xr_vk_resolved_texture_snapshot resolved_textures;",
+        "if (!resolved_textures.pixel[i])",
+        "if (!resolved_textures.vertex[i])",
         "xr_vk_upload_constant_snapshot(vertex_constants, pixel_constants, uniform_offset, uniform_range)",
         "xr_vk_allocate_snapshot_descriptor(g_uniform_buffer, uniform_offset, uniform_range",
         "return descriptor_set != VK_NULL_HANDLE;",
@@ -52,13 +54,15 @@ def validate(root: Path) -> None:
         "pixel_texture_count != 16 || vertex_texture_count != 5",
         "xr_vk_resolved_texture_snapshot resolved_textures;",
         "xr_vk_resolve_texture_snapshot",
+        "if (!resolved_textures.pixel[i])",
+        "if (!resolved_textures.vertex[i])",
         "xr_vk_upload_constant_snapshot",
         "xr_vk_allocate_snapshot_descriptor",
         "return descriptor_set != VK_NULL_HANDLE;",
     )
     positions = [gate.find(token) for token in ordered]
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
-        raise RuntimeError("Vulkan backend descriptor validation failed: resolve/upload/descriptor gate order is unsafe")
+        raise RuntimeError("Vulkan backend descriptor validation failed: resolve/sparse-guard/upload/descriptor gate order is unsafe")
 
     begin_start = text.index("bool xr_vk_bootstrap_begin_frame()")
     end_start = text.index("bool xr_vk_bootstrap_end_frame()", begin_start)
@@ -111,7 +115,7 @@ def validate(root: Path) -> None:
         if token not in runtime:
             raise RuntimeError(f"Vulkan backend descriptor validation failed: D3D9 fallback removed: {token}")
 
-    print("[validate-vulkan-backend-descriptors] 64 MiB constant arena + split-frame fence-safe UBO/PS[16]/VS[5] descriptor materialization + bind-before-draw verified")
+    print("[validate-vulkan-backend-descriptors] 64 MiB arena + fence-safe descriptors + bind-before-draw + sparse-slot D3D9 fallback verified")
 
 
 def main() -> int:
