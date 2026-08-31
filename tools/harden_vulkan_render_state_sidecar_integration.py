@@ -10,14 +10,12 @@ from harden_vulkan_pipeline_render_state import harden as harden_vulkan_pipeline
 from harden_vulkan_dynamic_stream_association import harden as harden_vulkan_dynamic_stream_association
 from harden_vulkan_dynamic_stream_ranges import harden as harden_vulkan_dynamic_stream_ranges
 from harden_vulkan_spirv_descriptor_contract import harden as harden_vulkan_spirv_descriptor_contract
+from harden_vulkan_spirv_texture_usage import harden as harden_vulkan_spirv_texture_usage
 from validate_vulkan_dynamic_stream_association import validate as validate_vulkan_dynamic_stream_association
 
 
 def harden(root: Path) -> None:
     root = root.resolve()
-
-    # These stages intentionally run after the base shader-sidecar loader.  They upgrade
-    # the already materialized backend ABI/pipeline factory in one deterministic order.
     harden_vulkan_render_state_cull(root)
     harden_vulkan_backend_stateblock_identity(root)
     harden_vulkan_backend_render_state_bridge(root)
@@ -30,9 +28,6 @@ def harden(root: Path) -> None:
         raise FileNotFoundError(source)
     text = source.read_text(encoding="utf-8")
 
-    # The sidecar loader originally forward-declares the pre-render-state pipeline
-    # factory.  Keep exactly one state-aware declaration so 8-argument calls cannot
-    # bind to an undefined overload after the factory gains its render_state argument.
     old_decl = '''    VkPipeline xr_vk_create_graphics_pipeline(const void* vs_data, size_t vs_size, const char* vs_entry,
         const void* ps_data, size_t ps_size, const char* ps_entry,
         const xr_vk_vertex_input_layout* vertex_layout,
@@ -98,7 +93,6 @@ def harden(root: Path) -> None:
 
     source.write_text(text, encoding="utf-8")
     final = source.read_text(encoding="utf-8")
-
     required = (
         "XR_VK_RS_CULLMODE",
         "IDirect3DStateBlock9* state_block",
@@ -119,21 +113,17 @@ def harden(root: Path) -> None:
     for token in required:
         if token not in final:
             raise RuntimeError(f"render-state sidecar integration validation failed: missing {token}")
-
-    # A state-blind materialization call would create visually incorrect pipelines even
-    # though the key is state-aware, so reject it explicitly.
     if "xr_vk_materialize_backend_pipeline(pipeline_key, vertex_layout)" in final:
         raise RuntimeError("render-state sidecar integration validation failed: state-blind materializer call remains")
 
-    # Sidecars must match the exact set0 UBO + PS[16] + VS[5] descriptor ABI before a
-    # graphics pipeline can be accepted into the backend registry.
     harden_vulkan_spirv_descriptor_contract(root)
+    harden_vulkan_spirv_texture_usage(root)
     validate_vulkan_dynamic_stream_association(root)
-    print("[vulkan-render-state-sidecar] canonical D3D9 state + gap-safe dynamic stream association + strict SPIR-V descriptor ABI participate in safe sidecar pipeline materialization")
+    print("[vulkan-render-state-sidecar] canonical D3D9 state + strict SPIR-V resource types + conservative per-pipeline texture usage masks integrated")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Integrate canonical D3D9 render state, dynamic stream association and descriptor-safe SPIR-V sidecars into Vulkan pipeline materialization.")
+    parser = argparse.ArgumentParser(description="Integrate render state, stream safety and typed SPIR-V texture usage into Vulkan pipeline materialization.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
