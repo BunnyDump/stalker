@@ -9,6 +9,7 @@ from harden_vulkan_backend_render_state_bridge import harden as harden_vulkan_ba
 from harden_vulkan_pipeline_render_state import harden as harden_vulkan_pipeline_render_state
 from harden_vulkan_dynamic_stream_association import harden as harden_vulkan_dynamic_stream_association
 from harden_vulkan_dynamic_stream_ranges import harden as harden_vulkan_dynamic_stream_ranges
+from harden_vulkan_spirv_descriptor_contract import harden as harden_vulkan_spirv_descriptor_contract
 from validate_vulkan_dynamic_stream_association import validate as validate_vulkan_dynamic_stream_association
 
 
@@ -124,12 +125,15 @@ def harden(root: Path) -> None:
     if "xr_vk_materialize_backend_pipeline(pipeline_key, vertex_layout)" in final:
         raise RuntimeError("render-state sidecar integration validation failed: state-blind materializer call remains")
 
+    # Sidecars must match the exact set0 UBO + PS[16] + VS[5] descriptor ABI before a
+    # graphics pipeline can be accepted into the backend registry.
+    harden_vulkan_spirv_descriptor_contract(root)
     validate_vulkan_dynamic_stream_association(root)
-    print("[vulkan-render-state-sidecar] canonical D3D9 state + gap-safe WRITEONLY dynamic stream association participate in safe sidecar pipeline materialization")
+    print("[vulkan-render-state-sidecar] canonical D3D9 state + gap-safe dynamic stream association + strict SPIR-V descriptor ABI participate in safe sidecar pipeline materialization")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Integrate canonical D3D9 render state and gap-safe dynamic stream association into Vulkan SPIR-V sidecar pipeline materialization.")
+    parser = argparse.ArgumentParser(description="Integrate canonical D3D9 render state, dynamic stream association and descriptor-safe SPIR-V sidecars into Vulkan pipeline materialization.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
