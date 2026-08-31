@@ -8,6 +8,7 @@ from harden_vulkan_backend_stateblock_identity import harden as harden_vulkan_ba
 from harden_vulkan_backend_render_state_bridge import harden as harden_vulkan_backend_render_state_bridge
 from harden_vulkan_pipeline_render_state import harden as harden_vulkan_pipeline_render_state
 from harden_vulkan_dynamic_stream_association import harden as harden_vulkan_dynamic_stream_association
+from validate_vulkan_dynamic_stream_association import validate as validate_vulkan_dynamic_stream_association
 
 
 def harden(root: Path) -> None:
@@ -119,6 +120,7 @@ def harden(root: Path) -> None:
     if "xr_vk_materialize_backend_pipeline(pipeline_key, vertex_layout)" in final:
         raise RuntimeError("render-state sidecar integration validation failed: state-blind materializer call remains")
 
+    validate_vulkan_dynamic_stream_association(root)
     print("[vulkan-render-state-sidecar] canonical D3D9 state + WRITEONLY dynamic stream association participate in safe sidecar pipeline materialization")
 
 
