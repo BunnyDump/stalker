@@ -8,6 +8,7 @@ from harden_vulkan_backend_stateblock_identity import harden as harden_vulkan_ba
 from harden_vulkan_backend_render_state_bridge import harden as harden_vulkan_backend_render_state_bridge
 from harden_vulkan_pipeline_render_state import harden as harden_vulkan_pipeline_render_state
 from harden_vulkan_dynamic_stream_association import harden as harden_vulkan_dynamic_stream_association
+from harden_vulkan_dynamic_stream_ranges import harden as harden_vulkan_dynamic_stream_ranges
 from validate_vulkan_dynamic_stream_association import validate as validate_vulkan_dynamic_stream_association
 
 
@@ -21,6 +22,7 @@ def harden(root: Path) -> None:
     harden_vulkan_backend_render_state_bridge(root)
     harden_vulkan_pipeline_render_state(root)
     harden_vulkan_dynamic_stream_association(root)
+    harden_vulkan_dynamic_stream_ranges(root)
 
     source = root / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
     if not source.is_file():
@@ -110,6 +112,8 @@ def harden(root: Path) -> None:
         "xrRender_vk_vertex_stream_upload",
         "xr_vk_dynamic_vertex_range_ready",
         "xr_vk_dynamic_index_range_ready",
+        "begin > g_stream_vertex_valid_end || end < g_stream_vertex_valid_begin",
+        "begin > g_stream_index_valid_end || end < g_stream_index_valid_begin",
     )
     for token in required:
         if token not in final:
@@ -121,11 +125,11 @@ def harden(root: Path) -> None:
         raise RuntimeError("render-state sidecar integration validation failed: state-blind materializer call remains")
 
     validate_vulkan_dynamic_stream_association(root)
-    print("[vulkan-render-state-sidecar] canonical D3D9 state + WRITEONLY dynamic stream association participate in safe sidecar pipeline materialization")
+    print("[vulkan-render-state-sidecar] canonical D3D9 state + gap-safe WRITEONLY dynamic stream association participate in safe sidecar pipeline materialization")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Integrate canonical D3D9 render state and dynamic stream association into Vulkan SPIR-V sidecar pipeline materialization.")
+    parser = argparse.ArgumentParser(description="Integrate canonical D3D9 render state and gap-safe dynamic stream association into Vulkan SPIR-V sidecar pipeline materialization.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
