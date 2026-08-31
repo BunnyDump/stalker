@@ -102,6 +102,27 @@ def stage_runtime_closure(ready_root: Path) -> tuple[list[str], list[str]]:
     )
 
 
+def stage_vulkan_launcher(ready_root: Path) -> Path:
+    launcher = ready_root / "START_VULKAN.bat"
+    launcher.write_text(
+        "@echo off\r\n"
+        "setlocal\r\n"
+        "pushd \"%~dp0\"\r\n"
+        "if not exist \"bin\\XR_3DA.exe\" (\r\n"
+        "  echo ERROR: bin\\XR_3DA.exe not found.\r\n"
+        "  pause\r\n"
+        "  exit /b 2\r\n"
+        ")\r\n"
+        "\"bin\\XR_3DA.exe\" -vulkan %*\r\n"
+        "set rc=%ERRORLEVEL%\r\n"
+        "popd\r\n"
+        "exit /b %rc%\r\n",
+        encoding="ascii",
+        newline="",
+    )
+    return launcher
+
+
 def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
     workspace = workspace.resolve()
     source_root = source_root.resolve()
@@ -134,6 +155,7 @@ def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     openal_files, vc_files = stage_runtime_closure(ready_root)
+    launcher = stage_vulkan_launcher(ready_root)
     runtime_lines = [
         "RC6 Windows runtime closure staged into bin:",
         "",
@@ -142,6 +164,9 @@ def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
         "",
         "Microsoft VC Redistributable DLLs for remaining engine modules:",
         *(vc_files if vc_files else ["(none)"]),
+        "",
+        f"Vulkan launcher: {launcher.name}",
+        "Launch policy: START_VULKAN.bat passes -vulkan; engine falls back to R2/R1 if xrRender_VK.dll cannot load.",
     ]
     (ready_root / "RUNTIME_DEPENDENCIES.txt").write_text(
         "\n".join(runtime_lines) + "\n", encoding="utf-8"
@@ -149,13 +174,14 @@ def stage(workspace: Path, source_root: Path, ready_root: Path) -> None:
 
     print(
         f"[release-stage] sparse gamedata files: {len(overlay_files)}; "
-        f"OpenAL overlay DLLs: {len(openal_files)}; VC runtime DLLs: {len(vc_files)}"
+        f"OpenAL overlay DLLs: {len(openal_files)}; VC runtime DLLs: {len(vc_files)}; "
+        f"launcher: {launcher.name}"
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Stage sparse integration gamedata and Windows runtime dependency closure."
+        description="Stage sparse integration gamedata, Vulkan launcher and Windows runtime dependency closure."
     )
     parser.add_argument("source_pos", nargs="?")
     parser.add_argument("ready_pos", nargs="?")
