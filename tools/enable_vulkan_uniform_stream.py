@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from harden_vulkan_constant_cache_readback import harden as harden_vulkan_constant_cache_readback
+from harden_vulkan_constant_snapshot import harden as harden_vulkan_constant_snapshot
+
 
 UNIFORM_CAPACITY = 64 * 1024
 
@@ -12,6 +15,9 @@ def install_uniform_stream(root: Path) -> None:
     source = renderer / "vk_bootstrap.cpp"
     if not source.is_file():
         raise FileNotFoundError("Vulkan uniform stream requires materialized texture/material state")
+
+    # The Vulkan UBO serializer reads SHOC's float-register cache through const-safe accessors.
+    harden_vulkan_constant_cache_readback(root)
 
     text = source.read_text(encoding="utf-8")
 
@@ -122,7 +128,10 @@ def install_uniform_stream(root: Path) -> None:
         if token not in final:
             raise RuntimeError(f"Vulkan uniform stream validation failed: missing {token}")
 
-    print("[vulkan-uniforms] aligned 64 KiB host-coherent per-frame uniform stream installed")
+    # Serialize the exact SHOC VS/PS float-register image only after the aligned upload stream exists.
+    harden_vulkan_constant_snapshot(root)
+
+    print("[vulkan-uniforms] aligned 64 KiB host-coherent stream + fixed VS[256]/PS[256] constant snapshot installed")
 
 
 def main() -> int:
