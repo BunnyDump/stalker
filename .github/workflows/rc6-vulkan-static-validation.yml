@@ -106,6 +106,8 @@ jobs:
           python tools/validate_vulkan_material_descriptors.py source
           python tools/validate_vulkan_texture_bridge.py source
           python tools/validate_vulkan_uniform_stream.py source
+          python tools/validate_vulkan_backend_descriptor_materialization.py source
+          python tools/validate_vulkan_runtime_invariants.py source
           python tools/validate_vulkan_transactional_swapchain.py source
 
       - name: Verify materialized renderer contract
@@ -134,9 +136,14 @@ jobs:
           grep -Fq 'presented == VK_ERROR_OUT_OF_DATE_KHR' "$vk"
           grep -Fq 'presented == VK_SUBOPTIMAL_KHR || acquire == VK_SUBOPTIMAL_KHR' "$vk"
           grep -Fq 'xr_vk_uniform_stream' "$vk"
-          grep -Fq 'xr_vk_bootstrap_frame' "$vk"
+          grep -Fq 'bool xr_vk_bootstrap_begin_frame()' "$vk"
+          grep -Fq 'bool xr_vk_bootstrap_end_frame()' "$vk"
           grep -Fq 'g_frame_submission_pending' "$vk"
           grep -Fq 'xr_vk_create_buffer(67108864ull' "$vk"
+          grep -Fq 'g_frame_descriptor_sets.push_back(descriptor_set)' "$vk"
+          grep -Fq 'xr_vk_release_frame_descriptors()' "$vk"
+          grep -Fq 'if (!resolved_textures.pixel[i])' "$vk"
+          grep -Fq 'if (!resolved_textures.vertex[i])' "$vk"
           grep -Fq 'void xr_vk_destroy_swapchain_resources()' "$vk"
           grep -Fq 'g_descriptor_pool == VK_NULL_HANDLE' "$vk"
           grep -Fq 'g_uniform_buffer == VK_NULL_HANDLE' "$vk"
@@ -147,76 +154,8 @@ jobs:
           grep -Fq 'XR_VK_TEXTURE_OWNER_CAPACITY = 8192' "$vk"
           grep -Fq 'xr_vk_texture_resource_shader_readable' "$vk"
           grep -Fq 'xr_vk_texture_snapshot_resolved' "$vk"
-
-          python - <<'PY'
-          from pathlib import Path
-          text = Path('source/xr_3da/xrRender_VK/vk_bootstrap.cpp').read_text(encoding='utf-8')
-          start = text.index('bool xr_vk_bootstrap_frame()')
-          end = text.index('bool xr_vk_bootstrap_runtime_ready()', start)
-          frame = text[start:end]
-          wait_fence = frame.index('g_vkWaitForFences')
-          collect_textures = frame.index('xr_vk_collect_deferred_textures()', wait_fence)
-          reset_cmd = frame.index('g_vkResetCommandBuffer')
-          reset_fence = frame.index('g_vkResetFences')
-          submit = frame.index('g_vkQueueSubmit')
-          if not wait_fence < collect_textures < reset_cmd < reset_fence < submit:
-              raise SystemExit('Unsafe Vulkan fence/texture-release/submit order')
-          present = frame.index('VkResult presented = g_vkQueuePresentKHR')
-          guard = frame.index('presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR', present)
-          commit = frame.index('g_image_initialized[image_index] = 1', present)
-          if not present < guard < commit:
-              raise SystemExit('Unsafe swapchain image state commit order')
-          acquire_ood = frame.index('acquire == VK_ERROR_OUT_OF_DATE_KHR')
-          acquire_recreate = frame.index('xr_vk_recreate_swapchain_from_window()', acquire_ood)
-          present_ood = frame.index('presented == VK_ERROR_OUT_OF_DATE_KHR')
-          present_recreate = frame.index('xr_vk_recreate_swapchain_from_window()', present_ood)
-          if not acquire_ood < acquire_recreate < present_ood < present_recreate:
-              raise SystemExit('Swapchain OUT_OF_DATE recreation path is incomplete')
-
-          resize_start = text.index('bool xr_vk_bootstrap_resize(unsigned width, unsigned height)')
-          frame_start = text.index('bool xr_vk_bootstrap_frame()', resize_start)
-          resize_and_recreate = text[resize_start:frame_start]
-          zero_guard = resize_and_recreate.index('if (!width || !height)')
-          transaction = resize_and_recreate.index('xr_vk_transactional_recreate_swapchain(width, height)')
-          if not zero_guard < transaction:
-              raise SystemExit('Minimized zero-extent swapchain recreation is attempted prematurely')
-          if resize_and_recreate.count('xr_vk_transactional_recreate_swapchain(width, height)') < 2:
-              raise SystemExit('Not all resize paths use transactional swapchain recreation')
-          if 'xr_vk_destroy_frame_resources();' in resize_and_recreate:
-              raise SystemExit('Resize invalidates persistent Vulkan material/device resources')
-          if 'xr_vk_destroy_swapchain_resources();\n    return xr_vk_create_swapchain(width, height);' in resize_and_recreate:
-              raise SystemExit('Legacy destructive swapchain recreation path remains')
-
-          partial_start = text.index('void xr_vk_destroy_swapchain_resources()')
-          full_start = text.index('void xr_vk_destroy_frame_resources()', partial_start)
-          partial = text[partial_start:full_start]
-          for forbidden in (
-              'g_vkDestroyDescriptorPool', 'g_vkDestroyDescriptorSetLayout', 'g_vkDestroyPipelineLayout',
-              'g_vkDestroyPipelineCache', 'g_vkDestroySampler', 'g_uniform_buffer', 'g_upload_buffer',
-              'g_stream_vertex_buffer', 'g_stream_index_buffer'):
-              if forbidden in partial:
-                  raise SystemExit(f'Swapchain teardown incorrectly owns persistent resource: {forbidden}')
-
-          tx_start = text.index('bool xr_vk_transactional_recreate_swapchain(unsigned width, unsigned height)')
-          tx_end = resize_start
-          tx = text[tx_start:tx_end]
-          create_new = tx.index('xr_vk_create_swapchain(width, height, old_state.swapchain)')
-          rollback = tx.index('xr_vk_restore_swapchain_state(old_state);', create_new)
-          capture_new = tx.index('new_state = xr_vk_capture_swapchain_state()', rollback)
-          destroy_old = tx.index('xr_vk_destroy_swapchain_resources();', capture_new)
-          restore_new = tx.index('xr_vk_restore_swapchain_state(new_state);', destroy_old)
-          if not create_new < rollback < capture_new < destroy_old < restore_new:
-              raise SystemExit('Transactional swapchain rollback/commit ordering is unsafe')
-
-          destroy_start = full_start
-          destroy_end = text.index('void xr_vk_destroy_window_runtime()', destroy_start)
-          destroy_frame = text[destroy_start:destroy_end]
-          idle = destroy_frame.index('g_vkDeviceWaitIdle')
-          collect_shutdown = destroy_frame.index('xr_vk_collect_deferred_textures()', idle)
-          if not idle < collect_shutdown:
-              raise SystemExit('Deferred textures are not collected after device idle during shutdown')
-          PY
-
+          python tools/validate_vulkan_runtime_invariants.py source
+          python tools/validate_vulkan_backend_descriptor_materialization.py source
           echo 'Static RC6 Vulkan materialization contract passed.'
 
       - name: Upload materialization diagnostics
