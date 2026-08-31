@@ -118,8 +118,10 @@ jobs:
           set -euo pipefail
           vk='source/xr_3da/xrRender_VK/vk_bootstrap.cpp'
           render='source/xr_3da/xrRender_VK/r2_R_render.cpp'
+          test_hw='source/xr_3da/xrRender_VK/r2_test_hw.cpp'
           test -s "$vk"
           test -s "$render"
+          test -s "$test_hw"
           grep -Fq 'vkCreateWin32SurfaceKHR' "$vk"
           grep -Fq 'vkCreateSwapchainKHR' "$vk"
           grep -Fq 'vkCreateGraphicsPipelines' "$vk"
@@ -163,6 +165,11 @@ jobs:
           grep -Fq 'XR_VK_TEXTURE_OWNER_CAPACITY = 8192' "$vk"
           grep -Fq 'xr_vk_texture_resource_shader_readable' "$vk"
           grep -Fq 'xr_vk_texture_snapshot_resolved' "$vk"
+          grep -Fq 'bool xr_vk_selected_device_supports_swapchain()' "$vk"
+          grep -Fq 'vkEnumerateDeviceExtensionProperties' "$vk"
+          grep -Fq 'VK_KHR_SWAPCHAIN_EXTENSION_NAME' "$vk"
+          grep -Fq 'xr_vk_selected_device_supports_swapchain();' "$vk"
+          grep -Fq 'xrRender_vk_capability_probe' "$test_hw"
           grep -Fq 'xr_vk_bootstrap_runtime_ready()' "$render"
           if grep -Fq -- '-vkpresent' "$render"; then
             echo 'Obsolete -vkpresent gate remains in materialized Vulkan Render scope.' >&2
@@ -181,6 +188,7 @@ jobs:
           path: |
             source/xr_3da/EngineAPI.cpp
             source/xr_3da/xrRender_VK/xrRender_R2.cpp
+            source/xr_3da/xrRender_VK/r2_test_hw.cpp
             source/xr_3da/xrRender_VK/r2.cpp
             source/xr_3da/xrRender_VK/r2_R_render.cpp
             source/xr_3da/xrRender_VK/vk_bootstrap.cpp
