@@ -27,8 +27,10 @@ def validate(root: Path) -> None:
         "VkDescriptorSet& descriptor_set",
         "descriptor_set = VK_NULL_HANDLE;",
         "xr_vk_resolved_texture_snapshot resolved_textures;",
-        "if (!resolved_textures.pixel[i])",
-        "if (!resolved_textures.vertex[i])",
+        "xr_vk_backend_draw_resources_ready(VkPipeline pipeline",
+        "xr_vk_find_pipeline_texture_usage(pipeline, pixel_usage_mask, vertex_usage_mask)",
+        "pixel_usage_mask & (1u << i)",
+        "vertex_usage_mask & (1u << i)",
         "xr_vk_upload_constant_snapshot(vertex_constants, pixel_constants, uniform_offset, uniform_range)",
         "xr_vk_allocate_snapshot_descriptor(g_uniform_buffer, uniform_offset, uniform_range",
         "return descriptor_set != VK_NULL_HANDLE;",
@@ -44,9 +46,9 @@ def validate(root: Path) -> None:
         if token not in text:
             raise RuntimeError(f"Vulkan backend descriptor validation failed: missing {token}")
 
-    gate_signature = "xr_vk_backend_draw_resources_ready(const R_constant_array* vertex_constants"
+    gate_signature = "xr_vk_backend_draw_resources_ready(VkPipeline pipeline"
     if text.count(gate_signature) != 1:
-        raise RuntimeError("Vulkan backend descriptor validation failed: resource gate is not unique")
+        raise RuntimeError("Vulkan backend descriptor validation failed: pipeline-aware resource gate is not unique")
     gate_start = text.index(gate_signature)
     gate_end = text.index("    bool xr_vk_record_dynamic_indexed_backend_draw", gate_start)
     gate = text[gate_start:gate_end]
@@ -54,15 +56,19 @@ def validate(root: Path) -> None:
         "pixel_texture_count != 16 || vertex_texture_count != 5",
         "xr_vk_resolved_texture_snapshot resolved_textures;",
         "xr_vk_resolve_texture_snapshot",
-        "if (!resolved_textures.pixel[i])",
-        "if (!resolved_textures.vertex[i])",
+        "xr_vk_find_pipeline_texture_usage",
+        "pixel_usage_mask & (1u << i)",
+        "vertex_usage_mask & (1u << i)",
         "xr_vk_upload_constant_snapshot",
         "xr_vk_allocate_snapshot_descriptor",
         "return descriptor_set != VK_NULL_HANDLE;",
     )
     positions = [gate.find(token) for token in ordered]
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
-        raise RuntimeError("Vulkan backend descriptor validation failed: resolve/sparse-guard/upload/descriptor gate order is unsafe")
+        raise RuntimeError("Vulkan backend descriptor validation failed: resolve/usage-mask/upload/descriptor gate order is unsafe")
+
+    if "if (!resolved_textures.pixel[i])" in gate or "if (!resolved_textures.vertex[i])" in gate:
+        raise RuntimeError("Vulkan backend descriptor validation failed: obsolete all-slot sparse rejection remains")
 
     begin_start = text.index("bool xr_vk_bootstrap_begin_frame()")
     end_start = text.index("bool xr_vk_bootstrap_end_frame()", begin_start)
@@ -103,7 +109,7 @@ def validate(root: Path) -> None:
     if min(pipeline_bind, descriptor_bind, indexed_draw) < 0 or not pipeline_bind < descriptor_bind < indexed_draw:
         raise RuntimeError("Vulkan backend descriptor validation failed: indexed packet bind order invalid")
 
-    if text.count("xr_vk_backend_draw_resources_ready(vertex_constants, pixel_constants, pixel_textures, pixel_texture_count") != 2:
+    if text.count("xr_vk_backend_draw_resources_ready(pipeline, vertex_constants, pixel_constants, pixel_textures, pixel_texture_count") != 2:
         raise RuntimeError("Vulkan backend descriptor validation failed: descriptor snapshot should materialize once per export")
     if text.count("if (descriptor_set != VK_NULL_HANDLE &&") < 2:
         raise RuntimeError("Vulkan backend descriptor validation failed: dynamic-to-static descriptor reuse missing")
@@ -115,7 +121,7 @@ def validate(root: Path) -> None:
         if token not in runtime:
             raise RuntimeError(f"Vulkan backend descriptor validation failed: D3D9 fallback removed: {token}")
 
-    print("[validate-vulkan-backend-descriptors] 64 MiB arena + fence-safe descriptors + bind-before-draw + sparse-slot D3D9 fallback verified")
+    print("[validate-vulkan-backend-descriptors] 64 MiB arena + fence-safe descriptors + SPIR-V static-usage sparse gate + D3D9 fallback verified")
 
 
 def main() -> int:
