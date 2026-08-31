@@ -15,14 +15,21 @@ REGISTRY_BLOCK = r'''    struct xr_vk_texture_owner_entry
     enum { XR_VK_TEXTURE_OWNER_CAPACITY = 8192 };
     xr_vk_texture_owner_entry g_texture_owner_registry[XR_VK_TEXTURE_OWNER_CAPACITY];
 
-    bool xr_vk_texture_resource_usable(const xr_vk_texture_resource* resource)
+    bool xr_vk_texture_resource_alive(const xr_vk_texture_resource* resource)
     {
         return resource && resource->image != VK_NULL_HANDLE && resource->view != VK_NULL_HANDLE;
     }
 
+    bool xr_vk_texture_resource_shader_readable(const xr_vk_texture_resource* resource)
+    {
+        return xr_vk_texture_resource_alive(resource) &&
+            (resource->layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
+             resource->layout == VK_IMAGE_LAYOUT_GENERAL);
+    }
+
     bool xr_vk_register_texture_owner(const CTexture* owner, xr_vk_texture_resource& resource)
     {
-        if (!owner || !xr_vk_texture_resource_usable(&resource))
+        if (!owner || !xr_vk_texture_resource_alive(&resource))
             return false;
 
         for (u32 index = 0; index < XR_VK_TEXTURE_OWNER_CAPACITY; ++index)
@@ -88,7 +95,7 @@ REGISTRY_BLOCK = r'''    struct xr_vk_texture_owner_entry
         {
             const xr_vk_texture_owner_entry& entry = g_texture_owner_registry[index];
             if (entry.owner == owner)
-                return xr_vk_texture_resource_usable(entry.resource) ? entry.resource : NULL;
+                return xr_vk_texture_resource_shader_readable(entry.resource) ? entry.resource : NULL;
         }
         return NULL;
     }
@@ -142,7 +149,10 @@ def harden(root: Path) -> None:
     required = (
         "struct xr_vk_texture_owner_entry",
         "XR_VK_TEXTURE_OWNER_CAPACITY = 8192",
-        "xr_vk_texture_resource_usable",
+        "xr_vk_texture_resource_alive",
+        "xr_vk_texture_resource_shader_readable",
+        "VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL",
+        "VK_IMAGE_LAYOUT_GENERAL",
         "xr_vk_register_texture_owner",
         "xr_vk_unregister_texture_owner",
         "xr_vk_unregister_texture_resource",
@@ -158,7 +168,7 @@ def harden(root: Path) -> None:
     if final.count("struct xr_vk_texture_owner_entry") != 1:
         raise RuntimeError("Vulkan texture owner registry validation failed: duplicate registry materialization")
 
-    print("[vulkan-texture-owners] bounded CTexture* -> Vulkan sampled-image registry + stale-resource cleanup installed")
+    print("[vulkan-texture-owners] bounded CTexture* -> shader-readable Vulkan sampled-image registry + stale-resource cleanup installed")
 
 
 def main() -> int:
