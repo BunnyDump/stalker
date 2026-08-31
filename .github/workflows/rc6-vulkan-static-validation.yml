@@ -94,11 +94,12 @@ jobs:
           python tools/fix_x64_runtime_compat.py source
           python tools/harden_vulkan_capability_probe.py source
 
-      - name: Validate Vulkan frame and resource invariants
+      - name: Validate Vulkan startup, frame and resource invariants
         shell: bash
         run: |
           set -euo pipefail
           python tools/validate_vulkan_extensions.py source
+          python tools/validate_vulkan_startup_path.py source
           python tools/validate_vulkan_frame_path.py source
           python tools/validate_vulkan_geometry_bridge.py source
           python tools/validate_vulkan_stream_mirror.py source
@@ -116,7 +117,9 @@ jobs:
         run: |
           set -euo pipefail
           vk='source/xr_3da/xrRender_VK/vk_bootstrap.cpp'
+          render='source/xr_3da/xrRender_VK/r2_R_render.cpp'
           test -s "$vk"
+          test -s "$render"
           grep -Fq 'vkCreateWin32SurfaceKHR' "$vk"
           grep -Fq 'vkCreateSwapchainKHR' "$vk"
           grep -Fq 'vkCreateGraphicsPipelines' "$vk"
@@ -160,9 +163,15 @@ jobs:
           grep -Fq 'XR_VK_TEXTURE_OWNER_CAPACITY = 8192' "$vk"
           grep -Fq 'xr_vk_texture_resource_shader_readable' "$vk"
           grep -Fq 'xr_vk_texture_snapshot_resolved' "$vk"
+          grep -Fq 'xr_vk_bootstrap_runtime_ready()' "$render"
+          if grep -Fq -- '-vkpresent' "$render"; then
+            echo 'Obsolete -vkpresent gate remains in materialized Vulkan Render scope.' >&2
+            exit 1
+          fi
+          python tools/validate_vulkan_startup_path.py source
           python tools/validate_vulkan_runtime_invariants.py source
           python tools/validate_vulkan_backend_descriptor_materialization.py source
-          echo 'Static RC6 Vulkan materialization contract passed.'
+          echo 'Static RC6 Vulkan materialization/startup contract passed.'
 
       - name: Upload materialization diagnostics
         if: failure()
@@ -170,6 +179,10 @@ jobs:
         with:
           name: rc6-vulkan-static-diagnostics
           path: |
+            source/xr_3da/EngineAPI.cpp
+            source/xr_3da/xrRender_VK/xrRender_R2.cpp
+            source/xr_3da/xrRender_VK/r2.cpp
+            source/xr_3da/xrRender_VK/r2_R_render.cpp
             source/xr_3da/xrRender_VK/vk_bootstrap.cpp
             source/xr_3da/xrRender_VK/vk_bootstrap.h
           if-no-files-found: ignore
