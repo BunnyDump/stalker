@@ -26,19 +26,29 @@ def validate(root: Path) -> None:
         "IDirect3DVertexShader9* vertex_shader", "IDirect3DPixelShader9* pixel_shader",
         "LPCSTR vertex_shader_name", "LPCSTR pixel_shader_name",
         "IDirect3DStateBlock9* state_block", "const xr_vk_render_state_snapshot* render_state",
+        "const R_constant_array* vertex_constants", "const R_constant_array* pixel_constants",
+        "CTexture* const* pixel_textures", "CTexture* const* vertex_textures",
         "g_xr_vk_backend_draw_indexed", "g_xr_vk_backend_draw",
     ):
         if token not in header:
             raise RuntimeError(f"backend dispatch validation: missing contract token {token}")
 
-    indexed_call = "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, vk_vs_name, vk_ps_name, state, vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, baseV, startV, countV, startI, PC)"
-    plain_call = "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, vk_vs_name, vk_ps_name, state, vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, startV, PC)"
+    indexed_call = (
+        "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, vk_vs_name, vk_ps_name, state, "
+        "vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, &constants.a_vertex, &constants.a_pixel, "
+        "textures_ps, 16, textures_vs, 5, baseV, startV, countV, startI, PC)"
+    )
+    plain_call = (
+        "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, vk_vs_name, vk_ps_name, state, "
+        "vk_render_state_snapshot_valid ? &vk_render_state_snapshot : NULL, &constants.a_vertex, &constants.a_pixel, "
+        "textures_ps, 16, textures_vs, 5, startV, PC)"
+    )
     indexed_dispatch = runtime.find(indexed_call)
     indexed_fallback = runtime.find("HW.pDevice->DrawIndexedPrimitive(T, baseV, startV, countV, startI, PC)")
     plain_dispatch = runtime.find(plain_call)
     plain_fallback = runtime.find("HW.pDevice->DrawPrimitive(T, startV, PC)")
     if min(indexed_dispatch, indexed_fallback, plain_dispatch, plain_fallback) < 0:
-        raise RuntimeError("backend dispatch validation: state-snapshot+shader production Render dispatch/fallback path incomplete")
+        raise RuntimeError("backend dispatch validation: resource+state+shader production Render dispatch/fallback path incomplete")
     if indexed_dispatch > indexed_fallback or plain_dispatch > plain_fallback:
         raise RuntimeError("backend dispatch validation: D3D fallback executes before Vulkan dispatch")
 
@@ -76,6 +86,8 @@ def validate(root: Path) -> None:
             "IDirect3DVertexShader9* vertex_shader", "IDirect3DPixelShader9* pixel_shader",
             "LPCSTR vertex_shader_name", "LPCSTR pixel_shader_name", "IDirect3DStateBlock9* state_block",
             "const xr_vk_render_state_snapshot* render_state",
+            "const R_constant_array* vertex_constants", "const R_constant_array* pixel_constants",
+            "CTexture* const* pixel_textures", "CTexture* const* vertex_textures",
             "!vertex_shader || !pixel_shader", "!vertex_shader_name || !pixel_shader_name", "!state_block", "!render_state",
             "VkCommandBuffer command_buffer = reinterpret_cast<VkCommandBuffer>(xr_vk_bootstrap_active_command_buffer());",
             "if (command_buffer == VK_NULL_HANDLE)",
@@ -124,11 +136,11 @@ def validate(root: Path) -> None:
     if "D3DPT_TRIANGLELIST" in runtime[runtime.find("ICF void CBackend::Render"):runtime.find("ICF void CBackend::set_Shader")]:
         raise RuntimeError("backend dispatch validation: production draw path hard-codes triangle-list topology")
 
-    print("[vulkan-backend-dispatch] shader handles/names + canonical render-state snapshot + state-aware sidecar materialization + generation-keyed pipeline registry + active R2 command buffer + fail-closed D3D fallback verified")
+    print("[vulkan-backend-dispatch] shader handles/names + canonical render-state + exact constants/textures + sidecar materialization + generation-keyed pipeline registry + active R2 command buffer + fail-closed D3D fallback verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate live SHOC CBackend to Vulkan renderer dispatch with stable shader/render-state/pipeline identity and active frame gating.")
+    parser = argparse.ArgumentParser(description="Validate live SHOC CBackend to Vulkan renderer dispatch with stable shader/render-state/resource/pipeline identity and active frame gating.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
