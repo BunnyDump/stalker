@@ -11,6 +11,7 @@ from harden_vulkan_dynamic_stream_association import harden as harden_vulkan_dyn
 from harden_vulkan_dynamic_stream_ranges import harden as harden_vulkan_dynamic_stream_ranges
 from harden_vulkan_spirv_descriptor_contract import harden as harden_vulkan_spirv_descriptor_contract
 from harden_vulkan_spirv_texture_usage import harden as harden_vulkan_spirv_texture_usage
+from harden_vulkan_missing_sidecar_diagnostics import harden as harden_vulkan_missing_sidecar_diagnostics
 from validate_vulkan_dynamic_stream_association import validate as validate_vulkan_dynamic_stream_association
 
 
@@ -118,12 +119,13 @@ def harden(root: Path) -> None:
 
     harden_vulkan_spirv_descriptor_contract(root)
     harden_vulkan_spirv_texture_usage(root)
+    harden_vulkan_missing_sidecar_diagnostics(root)
     validate_vulkan_dynamic_stream_association(root)
-    print("[vulkan-render-state-sidecar] canonical D3D9 state + strict SPIR-V resource types + conservative per-pipeline texture usage masks integrated")
+    print("[vulkan-render-state-sidecar] canonical D3D9 state + strict SPIR-V resource types + conservative per-pipeline texture usage masks + missing-sidecar diagnostics integrated")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Integrate render state, stream safety and typed SPIR-V texture usage into Vulkan pipeline materialization.")
+    parser = argparse.ArgumentParser(description="Integrate render state, stream safety, typed SPIR-V texture usage and sidecar diagnostics into Vulkan pipeline materialization.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
