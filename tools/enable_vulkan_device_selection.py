@@ -3,9 +3,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from enable_vulkan_renderer_selection import enable as enable_vulkan_renderer_selection
+
 
 def enable_device_selection(root: Path) -> None:
-    renderer = root.resolve() / "xr_3da" / "xrRender_VK"
+    root = root.resolve()
+    enable_vulkan_renderer_selection(root)
+
+    renderer = root / "xr_3da" / "xrRender_VK"
     source = renderer / "vk_bootstrap.cpp"
     if not source.is_file():
         raise FileNotFoundError(source)
@@ -52,11 +57,17 @@ def enable_device_selection(root: Path) -> None:
         if token not in final:
             raise RuntimeError(f"Vulkan device selection validation failed: missing {token}")
 
-    print("[vulkan-device] physical device and graphics queue family selection installed as private bootstrap state")
+    engine_api = root / "xr_3da" / "EngineAPI.cpp"
+    engine_text = engine_api.read_text(encoding="utf-8")
+    for token in ('xrRender_VK.dll', 'strstr(Core.Params, "-vulkan")', 'falling back to R2/R1'):
+        if token not in engine_text:
+            raise RuntimeError(f"Vulkan device selection validation failed: engine loader missing {token}")
+
+    print("[vulkan-device] engine -vulkan selection + physical device and graphics queue family selection installed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Add Vulkan physical-device and graphics queue-family selection to xrRender_VK bootstrap.")
+    parser = argparse.ArgumentParser(description="Add Vulkan engine selection, physical-device and graphics queue-family selection.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     enable_device_selection(Path(args.root))
