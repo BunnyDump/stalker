@@ -30,6 +30,7 @@ def harden(root: Path) -> None:
         xr_string pixel_shader_name;
         D3DPRIMITIVETYPE primitive;
         u32 vertex_stride;
+        u64 render_state_identity;
         u64 render_pass_generation;
     };
 
@@ -66,7 +67,8 @@ def harden(root: Path) -> None:
         return a.vertex_shader == b.vertex_shader && a.pixel_shader == b.pixel_shader &&
             a.declaration == b.declaration && a.vertex_shader_name == b.vertex_shader_name &&
             a.pixel_shader_name == b.pixel_shader_name && a.primitive == b.primitive &&
-            a.vertex_stride == b.vertex_stride && a.render_pass_generation == b.render_pass_generation;
+            a.vertex_stride == b.vertex_stride && a.render_state_identity == b.render_state_identity &&
+            a.render_pass_generation == b.render_pass_generation;
     }
 
     void xr_vk_clear_shader_pipeline_cache()
@@ -95,11 +97,12 @@ def harden(root: Path) -> None:
 
     VkPipeline xr_vk_resolve_shader_pipeline(IDirect3DVertexShader9* vertex_shader,
         IDirect3DPixelShader9* pixel_shader, const char* vertex_shader_name, const char* pixel_shader_name,
-        IDirect3DVertexDeclaration9* declaration, u32 vertex_stride, D3DPRIMITIVETYPE primitive)
+        IDirect3DVertexDeclaration9* declaration, u32 vertex_stride, D3DPRIMITIVETYPE primitive,
+        const xr_vk_render_state_snapshot* render_state)
     {
         if (!vertex_shader || !pixel_shader || !vertex_shader_name || !*vertex_shader_name ||
             !pixel_shader_name || !*pixel_shader_name || !declaration || !vertex_stride ||
-            !g_render_pass_generation)
+            !render_state || !render_state->identity || !g_render_pass_generation)
             return VK_NULL_HANDLE;
 
         xr_vk_shader_pipeline_key key;
@@ -110,6 +113,7 @@ def harden(root: Path) -> None:
         key.pixel_shader_name = pixel_shader_name;
         key.primitive = primitive;
         key.vertex_stride = vertex_stride;
+        key.render_state_identity = render_state->identity;
         key.render_pass_generation = g_render_pass_generation;
 
         for (u32 i = 0; i < g_shader_pipeline_cache.size(); ++i)
@@ -132,7 +136,7 @@ def harden(root: Path) -> None:
             return VK_NULL_HANDLE;
 
         VkPipeline pipeline = xr_vk_create_graphics_pipeline(&vs->bytes[0], vs->bytes.size(), "main",
-            &ps->bytes[0], ps->bytes.size(), "main", &vertex_layout, topology);
+            &ps->bytes[0], ps->bytes.size(), "main", &vertex_layout, topology, render_state);
         if (pipeline == VK_NULL_HANDLE)
             return VK_NULL_HANDLE;
 
@@ -212,10 +216,15 @@ extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_register_shader_spirv(
         "xr_vk_copy_d3d_declaration",
         "declaration->GetDeclaration",
         "xr_vk_resolve_shader_pipeline",
+        "u64 render_state_identity;",
+        "a.render_state_identity == b.render_state_identity",
+        "const xr_vk_render_state_snapshot* render_state",
+        "!render_state || !render_state->identity",
+        "key.render_state_identity = render_state->identity",
         "key.render_pass_generation = g_render_pass_generation",
         "xr_vk_build_vertex_input_layout",
         "xr_vk_d3d_primitive_to_topology",
-        "xr_vk_create_graphics_pipeline",
+        "&vertex_layout, topology, render_state)",
         "xrRender_vk_register_shader_spirv",
         "words[0] != 0x07230203u",
         "xr_vk_clear_shader_pipeline_cache();",
@@ -224,11 +233,11 @@ extern "C" __declspec(dllexport) BOOL __cdecl xrRender_vk_register_shader_spirv(
         if token not in final:
             raise RuntimeError(f"Vulkan shader pipeline cache validation failed: missing {token}")
 
-    print("[vulkan-shader-pipeline-cache] VS/PS identity + SPIR-V registry + declaration/topology/generation pipeline cache installed")
+    print("[vulkan-shader-pipeline-cache] legacy name registry isolated behind canonical render-state-aware pipeline identity")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install fail-closed SHOC shader identity to Vulkan SPIR-V pipeline cache bridge.")
+    parser = argparse.ArgumentParser(description="Keep the legacy name-based Vulkan shader registry fail-closed and canonical render-state aware.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     harden(Path(args.root))
