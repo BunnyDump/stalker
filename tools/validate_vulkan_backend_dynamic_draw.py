@@ -35,6 +35,7 @@ def validate(root: Path) -> None:
         "g_vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)",
         "xr_vk_bind_material_descriptor(command_buffer, descriptor_set)",
         "g_vkCmdDraw(command_buffer, vertex_count, 1, start_vertex, 0)",
+        "xr_vk_backend_draw_resources_ready(pipeline, vertex_constants, pixel_constants",
     )
     for token in required:
         if token not in text:
@@ -54,19 +55,19 @@ def validate(root: Path) -> None:
 
     indexed = text[indexed_start:plain_start]
     plain = text[plain_start:]
-    indexed_gate = indexed.find("xr_vk_backend_draw_resources_ready(vertex_constants, pixel_constants, pixel_textures, pixel_texture_count")
+    indexed_gate = indexed.find("xr_vk_backend_draw_resources_ready(pipeline, vertex_constants, pixel_constants, pixel_textures, pixel_texture_count")
     indexed_call = indexed.find("xr_vk_record_dynamic_indexed_backend_draw(command_buffer, pipeline, descriptor_set, primitive", indexed_gate)
     indexed_true = indexed.find("return TRUE;", indexed_call)
     indexed_fallback = indexed.rfind("return FALSE;")
     if min(indexed_gate, indexed_call, indexed_true, indexed_fallback) < 0 or not indexed_gate < indexed_call < indexed_true < indexed_fallback:
-        raise RuntimeError("Vulkan backend dynamic draw validation failed: indexed descriptor/gate/success/fallback order invalid")
+        raise RuntimeError("Vulkan backend dynamic draw validation failed: indexed pipeline-aware gate/draw/success/fallback order invalid")
 
-    plain_gate = plain.find("xr_vk_backend_draw_resources_ready(vertex_constants, pixel_constants, pixel_textures, pixel_texture_count")
+    plain_gate = plain.find("xr_vk_backend_draw_resources_ready(pipeline, vertex_constants, pixel_constants, pixel_textures, pixel_texture_count")
     plain_call = plain.find("xr_vk_record_dynamic_backend_draw(command_buffer, pipeline, descriptor_set, primitive", plain_gate)
     plain_true = plain.find("return TRUE;", plain_call)
     plain_fallback = plain.rfind("return FALSE;")
     if min(plain_gate, plain_call, plain_true, plain_fallback) < 0 or not plain_gate < plain_call < plain_true < plain_fallback:
-        raise RuntimeError("Vulkan backend dynamic draw validation failed: plain descriptor/gate/success/fallback order invalid")
+        raise RuntimeError("Vulkan backend dynamic draw validation failed: plain pipeline-aware gate/draw/success/fallback order invalid")
 
     for token in (
         "HW.pDevice->DrawIndexedPrimitive(T, baseV, startV, countV, startI, PC)",
@@ -75,11 +76,11 @@ def validate(root: Path) -> None:
         if token not in runtime:
             raise RuntimeError(f"Vulkan backend dynamic draw validation failed: D3D9 fallback removed: {token}")
 
-    print("[vulkan-backend-dynamic-draw] live descriptor-aware topology-preserving packet ABI + exact ranges + D3D9 fallback verified")
+    print("[vulkan-backend-dynamic-draw] pipeline-aware descriptor gate + topology-preserving dynamic draws + D3D9 fallback verified")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate production Vulkan recording for descriptor-backed mirrored SHOC dynamic draws.")
+    parser = argparse.ArgumentParser(description="Validate production Vulkan recording for pipeline-aware descriptor-backed SHOC dynamic draws.")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args()
     validate(Path(args.root))
