@@ -159,16 +159,17 @@ def install_material_descriptors(root: Path) -> None:
         text = text.replace(bind_marker, bind_replacement, 1)
 
     maker_signature = '''    bool xr_vk_make_indexed_draw_packet(VkPipeline pipeline, D3DFORMAT index_format,
-        u32 start_index, u32 primitive_count, s32 base_vertex, VkDeviceSize vertex_offset,
-        VkDeviceSize index_stream_offset, xr_vk_indexed_draw_packet& draw)
+        D3DPRIMITIVETYPE primitive_type, u32 start_index, u32 primitive_count, s32 base_vertex,
+        VkDeviceSize vertex_offset, VkDeviceSize index_stream_offset, xr_vk_indexed_draw_packet& draw)
 '''
     maker_replacement = '''    bool xr_vk_make_indexed_draw_packet(VkPipeline pipeline, VkDescriptorSet descriptor_set,
-        D3DFORMAT index_format, u32 start_index, u32 primitive_count, s32 base_vertex,
-        VkDeviceSize vertex_offset, VkDeviceSize index_stream_offset, xr_vk_indexed_draw_packet& draw)
+        D3DFORMAT index_format, D3DPRIMITIVETYPE primitive_type, u32 start_index, u32 primitive_count,
+        s32 base_vertex, VkDeviceSize vertex_offset, VkDeviceSize index_stream_offset,
+        xr_vk_indexed_draw_packet& draw)
 '''
     if "VkPipeline pipeline, VkDescriptorSet descriptor_set" not in text:
         if maker_signature not in text:
-            raise RuntimeError("Vulkan material descriptors: packet factory signature marker not found")
+            raise RuntimeError("Vulkan material descriptors: topology-aware packet factory signature marker not found")
         text = text.replace(maker_signature, maker_replacement, 1)
 
     maker_guard = '''        if (pipeline == VK_NULL_HANDLE ||
@@ -198,11 +199,13 @@ def install_material_descriptors(root: Path) -> None:
         "VkDescriptorSet descriptor_set;", "draw.descriptor_set == VK_NULL_HANDLE",
         "xr_vk_bind_material_descriptor(command_buffer, draw.descriptor_set)",
         "VkPipeline pipeline, VkDescriptorSet descriptor_set",
+        "D3DFORMAT index_format, D3DPRIMITIVETYPE primitive_type",
+        "xr_vk_d3d_primitive_to_topology(primitive_type, topology)",
     )
     for token in required:
         if token not in final:
             raise RuntimeError(f"Vulkan material descriptor validation failed: missing {token}")
-    print("[vulkan-materials] descriptor allocation/update/free + indexed draw binding installed")
+    print("[vulkan-materials] descriptor allocation/update/free + topology-preserving indexed draw binding installed")
 
 
 def main() -> int:
