@@ -48,6 +48,7 @@ from harden_vulkan_backend_dynamic_draw import harden as harden_vulkan_backend_d
 from harden_vulkan_backend_resource_gate import harden as harden_vulkan_backend_resource_gate
 from harden_vulkan_backend_resource_snapshot import harden as harden_vulkan_backend_resource_snapshot
 from validate_vulkan_backend_dynamic_draw import validate as validate_vulkan_backend_dynamic_draw
+from validate_vulkan_backend_resource_snapshot import validate as validate_vulkan_backend_resource_snapshot
 from validate_vulkan_pipeline_generation import validate as validate_vulkan_pipeline_generation
 from validate_vulkan_frame_path import validate as validate_vulkan_frame_path
 from validate_vulkan_geometry_bridge import validate as validate_vulkan_geometry_bridge
@@ -163,6 +164,7 @@ def harden(root: Path) -> None:
     validate_vulkan_indexed_draw(root)
     validate_vulkan_backend_dispatch(root)
     validate_vulkan_backend_dynamic_draw(root)
+    validate_vulkan_backend_resource_snapshot(root)
     validate_vulkan_material_descriptors(root)
     validate_vulkan_texture_bridge(root)
     validate_vulkan_uniform_stream(root)
