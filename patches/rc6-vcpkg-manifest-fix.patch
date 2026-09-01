@@ -2,7 +2,7 @@ diff --git a/PREPARE_RC6_X64_DEPS.ps1 b/PREPARE_RC6_X64_DEPS.ps1
 index 4f1d1ab..24f4514 100644
 --- a/PREPARE_RC6_X64_DEPS.ps1
 +++ b/PREPARE_RC6_X64_DEPS.ps1
-@@ -11,11 +11,44 @@ if(-not $Vcpkg -or -not (Test-Path (Join-Path $Vcpkg 'vcpkg.exe'))) {
+@@ -11,11 +11,47 @@ if(-not $Vcpkg -or -not (Test-Path (Join-Path $Vcpkg 'vcpkg.exe'))) {
  }
  $exe=Join-Path $Vcpkg 'vcpkg.exe'
  $trip='x64-windows-static-md'
@@ -53,7 +53,7 @@ index 4f1d1ab..24f4514 100644
  $incDst=Join-Path $Root 'third-party\include\x64'
  $libDst=Join-Path $Root 'third-party\lib\x64'
  New-Item -ItemType Directory -Force -Path $incDst,$libDst,(Join-Path $Root '..\libraries\x64'),(Join-Path $Root '..\bin_x64') | Out-Null
-@@ -24,7 +57,7 @@ foreach($d in @('ogg','vorbis','theora')) {
+@@ -24,7 +60,7 @@ foreach($d in @('ogg','vorbis','theora')) {
    if(Test-Path $src) { Copy-Item -Recurse -Force $src $incDst }
  }
  # OpenAL Soft x64 replaces the legacy 32-bit Router/wrap_oal pair.
