@@ -1,6 +1,6 @@
 --- a/PREPARE_RC6_X64_DEPS.ps1
 +++ b/PREPARE_RC6_X64_DEPS.ps1
-@@ -12,6 +12,18 @@
+@@ -12,6 +12,17 @@
  $exe=Join-Path $Vcpkg 'vcpkg.exe'
  $trip='x64-windows-static-md'
  $openalTrip='xray-openal-static-crt'
@@ -18,7 +18,7 @@
  # Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
  # Keep two isolated manifests because Xiph is linked static-md while OpenAL remains a DLL
  # but uses a static CRT and its bundled fmt implementation to avoid external fmt/MSVC DLLs.
-@@ -31,20 +43,22 @@
+@@ -31,21 +42,23 @@
  if(-not (Test-Path (Join-Path $overlayTriplets 'xray-openal-static-crt.cmake'))) {
    throw "RC6 OpenAL overlay triplet not found: $overlayTriplets"
  }
