@@ -100,6 +100,7 @@ jobs:
           set -euo pipefail
           python tools/validate_vulkan_extensions.py source
           python tools/validate_vulkan_startup_path.py source
+          python tools/harden_x64_game_startup.py --validate-only source
           python tools/validate_vulkan_frame_path.py source
           python tools/validate_vulkan_geometry_bridge.py source
           python tools/validate_vulkan_stream_mirror.py source
@@ -187,6 +188,8 @@ jobs:
           name: rc6-vulkan-static-diagnostics
           path: |
             source/xr_3da/EngineAPI.cpp
+            source/xr_3da/xrGame/xrGame.cpp
+            source/xr_3da/xrGame/RegistryFuncs.cpp
             source/xr_3da/xrRender_VK/xrRender_R2.cpp
             source/xr_3da/xrRender_VK/r2_test_hw.cpp
             source/xr_3da/xrRender_VK/r2.cpp

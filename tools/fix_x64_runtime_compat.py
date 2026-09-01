@@ -7,6 +7,7 @@ from enable_vulkan_bootstrap import enable_vulkan_bootstrap
 from enable_vulkan_capability_probe import enable_vulkan_capability_probe
 from harden_vulkan_capability_probe import harden as harden_vulkan_capability_probe
 from harden_vulkan_shader_pipeline_cache import harden as harden_vulkan_shader_pipeline_cache
+from harden_x64_game_startup import harden as harden_x64_game_startup
 
 JIT_GUARD_OLD = b"#ifdef USE_JIT"
 JIT_GUARD_NEW = b"#if defined(USE_JIT) && !defined(_WIN64)"
@@ -86,6 +87,7 @@ def main() -> int:
     disable_unavailable_x64_lua_jit(root)
     fix_ispatial_pointer_truncation(root)
     fix_stream_reader_pointer_width(root)
+    harden_x64_game_startup(root)
     enable_vulkan_bootstrap(root)
     enable_vulkan_capability_probe(root)
     harden_vulkan_capability_probe(root)
