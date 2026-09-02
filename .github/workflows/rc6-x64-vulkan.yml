@@ -1,0 +1,271 @@
+name: RC6 x64 Vulkan Build
+
+on:
+  push:
+    branches: [xray-rc6-vulkan-x64]
+  workflow_dispatch:
+    inputs:
+      require_complete_release:
+        description: Fail packaging unless x64/Vulkan runtime closure and sparse gamedata policy validate
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-x64-vulkan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64 Release
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout RC6 integration repo
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify RC6 patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem "$env:GITHUB_WORKSPACE\patches\rc6_ci_bin.part*" | Sort-Object Name
+          if ($parts.Count -ne 11) { throw "Expected 11 RC6 binary patch chunks, found $($parts.Count)." }
+          $xz = Join-Path $env:RUNNER_TEMP 'RC6_CI_COMPACT.patch.xz'
+          $stream = [IO.File]::Create($xz)
+          try {
+            foreach ($part in $parts) {
+              $bytes = [IO.File]::ReadAllBytes($part.FullName)
+              $stream.Write($bytes, 0, $bytes.Length)
+            }
+          } finally {
+            $stream.Dispose()
+          }
+          $actual = (Get-FileHash $xz -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482'
+          if ($actual -ne $expected) { throw "RC6 patch archive hash mismatch: $actual" }
+          $seven = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if (-not (Test-Path $seven)) { throw '7-Zip is not available on the runner.' }
+          $out = Join-Path $env:RUNNER_TEMP 'rc6_patch'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          & $seven e -y "-o$out" $xz | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to unpack RC6 patch.' }
+          $patch = Get-ChildItem $out -Filter '*.patch' | Select-Object -First 1
+          if (-not $patch) { throw 'Unpacked RC6 patch not found.' }
+          "RC6_PATCH=$($patch.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Clone pinned upstream source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git clone https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
+          git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to checkout pinned upstream revision.' }
+
+      - name: Materialize Vulkan renderer and apply RC6
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_R2" "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK"
+          git -C source apply --check "$env:RC6_PATCH"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 patch preflight failed.' }
+          git -C source apply "$env:RC6_PATCH"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 patch application failed.' }
+
+          $vcpkgFix = Join-Path $env:GITHUB_WORKSPACE 'patches\rc6-vcpkg-manifest-fix.patch'
+          git -C source apply --check "$vcpkgFix"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg fix preflight failed.' }
+          git -C source apply "$vcpkgFix"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg fix application failed.' }
+
+          $baselineFix = Join-Path $env:GITHUB_WORKSPACE 'patches\rc6-vcpkg-baseline-fix.patch'
+          git -C source apply --check "$baselineFix"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg baseline fix preflight failed.' }
+          git -C source apply "$baselineFix"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 vcpkg baseline fix application failed.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_item_metadata.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 x64 item-metadata normalization failed.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\fix_legacy_stl.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 legacy STL modernization failed.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_abi.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 Win64 ABI migration failed.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 Win64 runtime compatibility migration failed.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\harden_vulkan_capability_probe.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 full Vulkan hardening materialization failed.' }
+
+          $vk = Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\xrRender_VK\vk_bootstrap.cpp'
+          if (-not (Select-String -Path $vk -SimpleMatch 'XR_VK_TEXTURE_OWNER_CAPACITY = 8192' -Quiet)) {
+            throw 'RC6 materialized Vulkan renderer is missing texture owner registry.'
+          }
+          if (-not (Select-String -Path $vk -SimpleMatch 'xr_vk_texture_resource_shader_readable' -Quiet)) {
+            throw 'RC6 materialized Vulkan renderer is missing shader-readable texture ownership gate.'
+          }
+
+          $utf8Bom = [Text.UTF8Encoding]::new($true)
+          Get-ChildItem "$env:GITHUB_WORKSPACE\source" -Filter '*.ps1' -File | ForEach-Object {
+            $text = [IO.File]::ReadAllText($_.FullName, [Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText($_.FullName, $text, $utf8Bom)
+          }
+          git -C source status --short
+
+      - name: Restore DirectX SDK June 2010 cache
+        id: dxsdk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)
+          key: dxsdk-jun2010-v1
+
+      - name: Install DirectX SDK June 2010
+        if: steps.dxsdk-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          choco install directx-sdk --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'DirectX SDK installation failed.' }
+
+      - name: Save DirectX SDK June 2010 cache
+        if: steps.dxsdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)
+          key: ${{ steps.dxsdk-cache.outputs.cache-primary-key }}
+
+      - name: Configure build dependencies
+        shell: pwsh
+        run: |
+          $dx = 'C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\'
+          if (-not (Test-Path (Join-Path $dx 'Include\d3d9.h'))) { throw 'DXSDK d3d9.h not found.' }
+          "DXSDK_DIR=$dx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
+          "VCPKG_ROOT=$vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Restore vcpkg binary archives
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: rc6-vcpkg-${{ runner.os }}-x64-${{ hashFiles('patches/rc6-vcpkg-*.patch', 'tools/vcpkg-overlay/**') }}
+          restore-keys: |
+            rc6-vcpkg-${{ runner.os }}-x64-
+
+      - name: Build RC6 x64 Vulkan Release
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $PWD 'rc6-build.log'
+          & cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' 2>&1 | Tee-Object -FilePath $log
+          $exitCode = $LASTEXITCODE
+
+          if ($exitCode -ne 0) {
+            $candidateLogs = @($log)
+            $candidateLogs += Get-ChildItem -Path $PWD -Recurse -File -Include '*.log' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -ne $log } |
+              Select-Object -ExpandProperty FullName
+
+            $patterns = @(
+              '(?i)fatal error C\d{4}',
+              '(?i)\berror C\d{4}\b',
+              '(?i)\berror LNK\d{4}\b',
+              '(?i)\berror MSB\d{4}\b',
+              '(?i): error [A-Z]+\d{3,5}:'
+            )
+
+            $first = $null
+            foreach ($file in $candidateLogs) {
+              if (-not (Test-Path $file)) { continue }
+              $match = Select-String -Path $file -Pattern $patterns -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($match) {
+                $first = $match
+                break
+              }
+            }
+
+            if ($first) {
+              $line = ($first.Line -replace '%','%25' -replace "`r",'%0D' -replace "`n",'%0A')
+              Write-Host "::error title=First RC6 compiler error::$line"
+              Write-Host "FIRST_RC6_BUILD_ERROR: $($first.Line)"
+              Write-Host "FIRST_RC6_BUILD_ERROR_FILE: $($first.Path):$($first.LineNumber)"
+            } else {
+              Write-Host '::error title=RC6 build failed::No recognized MSVC/MSBuild error line was found in captured logs.'
+            }
+
+            exit $exitCode
+          }
+
+      - name: Save vcpkg binary archives
+        if: always() && steps.vcpkg-cache.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+      - name: Stage sparse gamedata, runtime closure, and classify RC6 package
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ready = Join-Path $env:GITHUB_WORKSPACE 'READY_RC6_X64_VULKAN'
+          if (-not (Test-Path $ready)) { throw "RC6 staging directory is missing: $ready" }
+
+          python "$env:GITHUB_WORKSPACE\tools\stage_rc6_release_gamedata.py" "$env:GITHUB_WORKSPACE\source" $ready
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to stage sparse gamedata/runtime dependency closure.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\validate_rc6_release.py" $ready
+          $validationExit = $LASTEXITCODE
+          $status = Join-Path $ready 'RC6_RELEASE_STATUS.txt'
+
+          if ($validationExit -eq 0) {
+            @(
+              'complete=true'
+              'artifact=STALKER_SHOC_RC6_X64_VULKAN_RELEASE'
+              'validation=x64-vulkan-runtime-closure+sparse-gamedata-passed'
+            ) | Set-Content -Path $status -Encoding UTF8
+            'RC6_RELEASE_COMPLETE=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'RC6_ARTIFACT_NAME=STALKER_SHOC_RC6_X64_VULKAN_RELEASE' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host 'RC6 package is complete: x64 engine + Vulkan renderer + runtime DLL closure + sparse changed-only gamedata.'
+          } else {
+            @(
+              'complete=false'
+              'artifact=STALKER_SHOC_RC6_X64_VULKAN_ENGINE'
+              'validation=runtime-closure-or-sparse-gamedata-policy-failed'
+            ) | Set-Content -Path $status -Encoding UTF8
+            'RC6_RELEASE_COMPLETE=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'RC6_ARTIFACT_NAME=STALKER_SHOC_RC6_X64_VULKAN_ENGINE' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Warning 'Engine build succeeded, but release validation failed; incomplete runtime or undeclared gamedata will not be called a release.'
+
+            $requireComplete = '${{ inputs.require_complete_release }}'
+            if ($requireComplete -eq 'true') {
+              throw 'Complete RC6 release was explicitly required, but runtime/sparse-gamedata validation failed.'
+            }
+          }
+
+      - name: Upload classified x64 runtime
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RC6_ARTIFACT_NAME }}
+          path: READY_RC6_X64_VULKAN
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-build-diagnostics
+          path: |
+            source/rc6-build.log
+            source/intermediate_x64/**
+            source/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7

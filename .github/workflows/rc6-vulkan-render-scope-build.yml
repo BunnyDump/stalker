@@ -1,0 +1,170 @@
+name: RC6 Vulkan render-scope build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - xray-rc6-vulkan-x64
+    paths:
+      - 'tools/enable_vulkan_render_scope.py'
+      - '.github/workflows/rc6-vulkan-render-scope-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct RC6 patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem "$env:GITHUB_WORKSPACE\patches" -Filter 'rc6_ci_bin.part*' -File | Sort-Object Name
+          if ($parts.Count -ne 11) { throw "Expected 11 RC6 patch chunks, found $($parts.Count)." }
+
+          $archive = Join-Path $env:RUNNER_TEMP 'RC6_CI_COMPACT.patch.xz'
+          $patch = Join-Path $env:RUNNER_TEMP 'RC6_CI_COMPACT.patch'
+          $output = [IO.File]::Create($archive)
+          try {
+            foreach ($part in $parts) {
+              $input = [IO.File]::OpenRead($part.FullName)
+              try { $input.CopyTo($output) } finally { $input.Dispose() }
+            }
+          } finally {
+            $output.Dispose()
+          }
+
+          $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          $expected = 'a249841b89a5cdc0696fd45ad21793345aec69c0eab72bfb7c1391668d93e482'
+          if ($actual -ne $expected) { throw "RC6 patch archive hash mismatch: $actual" }
+
+          & 7z e $archive "-o$env:RUNNER_TEMP" -y | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to unpack RC6 patch.' }
+          if (-not (Test-Path $patch)) {
+            $found = Get-ChildItem $env:RUNNER_TEMP -Filter '*.patch' | Select-Object -First 1
+            if (-not $found) { throw 'Unpacked RC6 patch not found.' }
+            $patch = $found.FullName
+          }
+          "RC6_PATCH=$patch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Clone pinned upstream source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git clone https://github.com/Mawrak/S.T.A.L.K.E.R.-SHOC-VS2019.git source
+          git -C source checkout ac3c009a3ecea26b60f16468993e7c540d063acf
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to checkout pinned upstream revision.' }
+
+      - name: Materialize RC6 and render scope
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_R2" "$env:GITHUB_WORKSPACE\source\xr_3da\xrRender_VK"
+
+          git -C source apply --check "$env:RC6_PATCH"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 patch preflight failed.' }
+          git -C source apply "$env:RC6_PATCH"
+          if ($LASTEXITCODE -ne 0) { throw 'RC6 patch application failed.' }
+
+          foreach ($name in @('rc6-vcpkg-manifest-fix.patch', 'rc6-vcpkg-baseline-fix.patch')) {
+            $fix = Join-Path $env:GITHUB_WORKSPACE "patches\$name"
+            git -C source apply --check $fix
+            if ($LASTEXITCODE -ne 0) { throw "$name preflight failed." }
+            git -C source apply $fix
+            if ($LASTEXITCODE -ne 0) { throw "$name application failed." }
+          }
+
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_item_metadata.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'x64 item metadata normalization failed.' }
+          python "$env:GITHUB_WORKSPACE\tools\fix_legacy_stl.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'legacy STL modernization failed.' }
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_abi.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'Win64 ABI migration failed.' }
+          python "$env:GITHUB_WORKSPACE\tools\fix_x64_runtime_compat.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'Win64 runtime compatibility migration failed.' }
+
+          python "$env:GITHUB_WORKSPACE\tools\enable_vulkan_render_scope.py" "$env:GITHUB_WORKSPACE\source"
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan renderer-scope materialization failed.' }
+
+          $render = Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\xrRender_VK\r2_R_render.cpp'
+          $lifecycle = Join-Path $env:GITHUB_WORKSPACE 'source\xr_3da\xrRender_VK\r2.cpp'
+          if (-not (Select-String -Path $render -SimpleMatch 'class xr_vk_render_frame_scope' -Quiet)) {
+            throw 'RAII Vulkan render scope is missing from r2_R_render.cpp.'
+          }
+          if (Select-String -Path $lifecycle -SimpleMatch 'xr_vk_bootstrap_frame();' -Quiet) {
+            throw 'Legacy OnFrame Vulkan presentation hook remains in r2.cpp.'
+          }
+
+      - name: Install DirectX SDK June 2010
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dx = 'C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\'
+          if (-not (Test-Path (Join-Path $dx 'Include\d3d9.h'))) {
+            choco install directx-sdk --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'DirectX SDK installation failed.' }
+          }
+          if (-not (Test-Path (Join-Path $dx 'Include\d3d9.h'))) { throw 'DXSDK d3d9.h not found.' }
+          "DXSDK_DIR=$dx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
+          "VCPKG_ROOT=$vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build RC6 x64 Vulkan Release
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $PWD 'rc6-render-scope-build.log'
+          & cmd.exe /d /c 'BUILD_RC6_X64_VULKAN_RELEASE.bat' 2>&1 | Tee-Object -FilePath $log
+          $exitCode = $LASTEXITCODE
+
+          if ($exitCode -ne 0) {
+            $candidateLogs = @($log)
+            $candidateLogs += Get-ChildItem -Path $PWD -Recurse -File -Include '*.log' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -ne $log } |
+              Select-Object -ExpandProperty FullName
+
+            $patterns = @(
+              '(?i)fatal error C\d{4}',
+              '(?i)\berror C\d{4}\b',
+              '(?i)\berror LNK\d{4}\b',
+              '(?i)\berror MSB\d{4}\b',
+              '(?i): error [A-Z]+\d{3,5}:'
+            )
+
+            $first = $null
+            foreach ($file in $candidateLogs) {
+              if (-not (Test-Path $file)) { continue }
+              $match = Select-String -Path $file -Pattern $patterns -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($match) {
+                $first = $match
+                break
+              }
+            }
+
+            if ($first) {
+              $line = ($first.Line -replace '%','%25' -replace "`r",'%0D' -replace "`n",'%0A')
+              Write-Host "::error title=First RC6 compiler error::$line"
+              Write-Host "FIRST_RC6_BUILD_ERROR: $($first.Line)"
+              Write-Host "FIRST_RC6_BUILD_ERROR_FILE: $($first.Path):$($first.LineNumber)"
+            } else {
+              Write-Host '::error title=RC6 build failed::No recognized MSVC/MSBuild error line was found in captured logs.'
+            }
+            exit $exitCode
+          }
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-vulkan-render-scope-build-log
+          path: source/rc6-render-scope-build.log
+          if-no-files-found: warn

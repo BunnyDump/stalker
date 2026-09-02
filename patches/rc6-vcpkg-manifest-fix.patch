@@ -1,0 +1,99 @@
+diff --git a/PREPARE_RC6_X64_DEPS.ps1 b/PREPARE_RC6_X64_DEPS.ps1
+index 4f1d1ab..24f4514 100644
+--- a/PREPARE_RC6_X64_DEPS.ps1
++++ b/PREPARE_RC6_X64_DEPS.ps1
+@@ -11,11 +11,47 @@ if(-not $Vcpkg -or -not (Test-Path (Join-Path $Vcpkg 'vcpkg.exe'))) {
+ }
+ $exe=Join-Path $Vcpkg 'vcpkg.exe'
+ $trip='x64-windows-static-md'
++$openalTrip='xray-openal-static-crt'
++# Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
++# Keep two isolated manifests because Xiph is linked static-md while OpenAL remains a DLL
++# but uses a static CRT and its bundled fmt implementation to avoid external fmt/MSVC DLLs.
++$manifestRoot=Join-Path $env:TEMP 'xray-rc6-vcpkg'
++$xiphManifest=Join-Path $manifestRoot 'xiph'
++$openalManifest=Join-Path $manifestRoot 'openal'
++$xiphInstall=Join-Path $manifestRoot 'installed-xiph'
++$openalInstall=Join-Path $manifestRoot 'installed-openal'
++$integrationRoot=$env:GITHUB_WORKSPACE
++if(-not $integrationRoot) { $integrationRoot=Split-Path $PSScriptRoot -Parent }
++$overlayPorts=Join-Path $integrationRoot 'tools\vcpkg-overlay\ports'
++$overlayTriplets=Join-Path $integrationRoot 'tools\vcpkg-overlay\triplets'
++if(-not (Test-Path (Join-Path $overlayPorts 'openal-soft\portfile.cmake'))) {
++  throw "RC6 OpenAL overlay port not found: $overlayPorts"
++}
++if(-not (Test-Path (Join-Path $overlayTriplets 'xray-openal-static-crt.cmake'))) {
++  throw "RC6 OpenAL overlay triplet not found: $overlayTriplets"
++}
++New-Item -ItemType Directory -Force -Path $xiphManifest,$openalManifest | Out-Null
++@'
++{
++  "name": "xray-rc6-xiph",
++  "version-string": "1.0.0",
++  "dependencies": ["libogg", "libvorbis", "libtheora"]
++}
++'@ | Set-Content -Encoding utf8 (Join-Path $xiphManifest 'vcpkg.json')
++@'
++{
++  "name": "xray-rc6-openal",
++  "version-string": "1.0.0",
++  "dependencies": ["openal-soft"]
++}
++'@ | Set-Content -Encoding utf8 (Join-Path $openalManifest 'vcpkg.json')
+ if(-not $SkipInstall) {
+-  & $exe install "libogg:$trip" "libvorbis:$trip" "libtheora:$trip" "openal-soft:x64-windows"
+-  if($LASTEXITCODE -ne 0) { throw 'vcpkg install завершился ошибкой.' }
++  & $exe install "--x-manifest-root=$xiphManifest" "--x-install-root=$xiphInstall" "--triplet=$trip"
++  if($LASTEXITCODE -ne 0) { throw 'vcpkg Xiph manifest install завершился ошибкой.' }
++  & $exe install "--x-manifest-root=$openalManifest" "--x-install-root=$openalInstall" "--overlay-ports=$overlayPorts" "--overlay-triplets=$overlayTriplets" "--triplet=$openalTrip"
++  if($LASTEXITCODE -ne 0) { throw 'vcpkg OpenAL overlay install завершился ошибкой.' }
+ }
+-$inst=Join-Path $Vcpkg "installed\$trip"
++$inst=Join-Path $xiphInstall $trip
+ $incDst=Join-Path $Root 'third-party\include\x64'
+ $libDst=Join-Path $Root 'third-party\lib\x64'
+ New-Item -ItemType Directory -Force -Path $incDst,$libDst,(Join-Path $Root '..\libraries\x64'),(Join-Path $Root '..\bin_x64') | Out-Null
+@@ -24,7 +60,7 @@ foreach($d in @('ogg','vorbis','theora')) {
+   if(Test-Path $src) { Copy-Item -Recurse -Force $src $incDst }
+ }
+ # OpenAL Soft x64 replaces the legacy 32-bit Router/wrap_oal pair.
+-$openalInst=Join-Path $Vcpkg 'installed\x64-windows'
++$openalInst=Join-Path $openalInstall $openalTrip
+ $alHeaders=Join-Path $openalInst 'include\AL'
+ if(Test-Path $alHeaders){ Copy-Item -Recurse -Force $alHeaders $incDst }
+ $alLibCandidates=@((Join-Path $openalInst 'lib\OpenAL32.lib'),(Join-Path $openalInst 'lib\openal32.lib'))
+
+diff --git a/xr_3da/ResourceManager_Scripting.cpp b/xr_3da/ResourceManager_Scripting.cpp
+--- a/xr_3da/ResourceManager_Scripting.cpp
++++ b/xr_3da/ResourceManager_Scripting.cpp
+@@ -300,7 +300,7 @@ void CResourceManager::LS_Load()
+ 	luaopen_table(LSVM);
+ 	luaopen_string(LSVM);
+ 	luaopen_math(LSVM);
+-#ifdef USE_JIT
++#if defined(USE_JIT) && !defined(_WIN64)
+ 	luaopen_jit(LSVM);
+ #endif
+ 
+@@ -382,7 +382,7 @@ void CResourceManager::LS_Load()
+ 	}
+ 	FS.file_list_close(folder);
+ 
+-#ifdef USE_JIT
++#if defined(USE_JIT) && !defined(_WIN64)
+ 	luaJIT_setmode(LSVM, LUAJIT_MODE_ENGINE, LUAJIT_MODE_ON);
+ #endif
+ }
+
+diff --git a/Directory.Build.targets b/Directory.Build.targets
+new file mode 100644
+--- /dev/null
++++ b/Directory.Build.targets
+@@ -0,0 +1,7 @@
++<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
++  <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(DXSDK_DIR)'!=''">
++    <Link>
++      <AdditionalLibraryDirectories>$(DXSDK_DIR)Lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
++    </Link>
++  </ItemDefinitionGroup>
++</Project>

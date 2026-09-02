@@ -1,0 +1,48 @@
+--- a/PREPARE_RC6_X64_DEPS.ps1
++++ b/PREPARE_RC6_X64_DEPS.ps1
+@@ -12,6 +12,17 @@
+ $exe=Join-Path $Vcpkg 'vcpkg.exe'
+ $trip='x64-windows-static-md'
+ $openalTrip='xray-openal-static-crt'
++$graph=Join-Path $PSScriptRoot 'xr_3da\xrGame\graph_abstract.h'
++$graphText=[IO.File]::ReadAllText($graph)
++$legacyGraph="`tu32 m_edge_count;"
++$fixedGraph="`tsize_t m_edge_count;"
++$legacyCount=([regex]::Matches($graphText,[regex]::Escape($legacyGraph))).Count
++if($legacyCount -ne 1) { throw "graph_abstract.h: expected one u32 m_edge_count, found $legacyCount" }
++$graphText=$graphText.Replace($legacyGraph,$fixedGraph)
++[IO.File]::WriteAllText($graph,$graphText,[Text.UTF8Encoding]::new($false))
++Write-Host '[x64-graph] m_edge_count storage widened u32 -> size_t'
++$baseline='e8a82dfad0c4a0dab656f350aa33dc8cef3e92ee'
++Write-Host "Using pinned vcpkg builtin-baseline $baseline"
+ # Hosted/current vcpkg distributions are manifest-first and may not expose classic mode.
+ # Keep two isolated manifests because Xiph is linked static-md while OpenAL remains a DLL
+ # but uses a static CRT and its bundled fmt implementation to avoid external fmt/MSVC DLLs.
+@@ -31,21 +42,23 @@
+ if(-not (Test-Path (Join-Path $overlayTriplets 'xray-openal-static-crt.cmake'))) {
+   throw "RC6 OpenAL overlay triplet not found: $overlayTriplets"
+ }
+ New-Item -ItemType Directory -Force -Path $xiphManifest,$openalManifest | Out-Null
+-@'
++@"
+ {
+   "name": "xray-rc6-xiph",
+   "version-string": "1.0.0",
++  "builtin-baseline": "$baseline",
+   "dependencies": ["libogg", "libvorbis", "libtheora"]
+ }
+-'@ | Set-Content -Encoding utf8 (Join-Path $xiphManifest 'vcpkg.json')
+-@'
++"@ | Set-Content -Encoding utf8 (Join-Path $xiphManifest 'vcpkg.json')
++@"
+ {
+   "name": "xray-rc6-openal",
+   "version-string": "1.0.0",
++  "builtin-baseline": "$baseline",
+   "dependencies": ["openal-soft"]
+ }
+-'@ | Set-Content -Encoding utf8 (Join-Path $openalManifest 'vcpkg.json')
++"@ | Set-Content -Encoding utf8 (Join-Path $openalManifest 'vcpkg.json')
+ if(-not $SkipInstall) {
+   & $exe install "--x-manifest-root=$xiphManifest" "--x-install-root=$xiphInstall" "--triplet=$trip"
+   if($LASTEXITCODE -ne 0) { throw 'vcpkg Xiph manifest install завершился ошибкой.' }

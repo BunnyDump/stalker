@@ -1,0 +1,7 @@
+R2 shader corpus source: gamedata_modernized_fixed_v24.zip
+Files under gamedata/shaders/r2: 180
+Vertex shaders (.vs): 53
+Pixel shaders (.ps): 77
+Stage shaders total: 130
+Archive SHA-256: cdcd9a926b08d9cbede6dd18e4066bb468787229f6f97be786caf86daec18dd6
+Purpose: isolated HLSL -> SPIR-V migration and CI validation for xrRender_VK.
