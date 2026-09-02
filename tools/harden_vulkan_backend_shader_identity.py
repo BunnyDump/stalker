@@ -8,8 +8,9 @@ def harden(root: Path) -> None:
     root = root.resolve()
     backend_h = root / "xr_3da" / "R_Backend.h"
     backend_runtime = root / "xr_3da" / "R_Backend_Runtime.h"
+    backend_source = root / "xr_3da" / "R_Backend_Runtime.cpp"
     vk_source = root / "xr_3da" / "xrRender_VK" / "vk_bootstrap.cpp"
-    for path in (backend_h, backend_runtime, vk_source):
+    for path in (backend_h, backend_runtime, backend_source, vk_source):
         if not path.is_file():
             raise FileNotFoundError(path)
 
@@ -48,14 +49,16 @@ def harden(root: Path) -> None:
             raise RuntimeError("backend shader identity: draw callback contract marker not found")
     backend_h.write_text(h, encoding="utf-8")
 
-    rt = backend_runtime.read_text(encoding="utf-8")
-
+    source = backend_source.read_text(encoding="utf-8")
     invalidate_marker = "\tps = NULL;\n\tvs = NULL;\n\tctable = NULL;\n"
     invalidate_new = "\tps = NULL;\n\tvs = NULL;\n\tvk_ps_name = NULL;\n\tvk_vs_name = NULL;\n\tctable = NULL;\n"
-    if "\tvk_ps_name = NULL;" not in rt:
-        if invalidate_marker not in rt:
+    if "\tvk_ps_name = NULL;" not in source:
+        if invalidate_marker not in source:
             raise RuntimeError("backend shader identity: Invalidate shader marker not found")
-        rt = rt.replace(invalidate_marker, invalidate_new, 1)
+        source = source.replace(invalidate_marker, invalidate_new, 1)
+    backend_source.write_text(source, encoding="utf-8")
+
+    rt = backend_runtime.read_text(encoding="utf-8")
 
     ps_marker = "\t\tps = _ps;\n\t\tCHK_DX(HW.pDevice->SetPixelShader(ps));\n"
     ps_new = "\t\tps = _ps;\n\t\tvk_ps_name = _n;\n\t\tCHK_DX(HW.pDevice->SetPixelShader(ps));\n"
@@ -141,6 +144,7 @@ def harden(root: Path) -> None:
             "ib, vs, ps, vk_vs_name, vk_ps_name",
             "vb_stride, vs, ps, vk_vs_name, vk_ps_name, startV",
         ),
+        backend_source: ("vk_ps_name = NULL;", "vk_vs_name = NULL;"),
         vk_source: (
             "IDirect3DVertexShader9* vertex_shader", "IDirect3DPixelShader9* pixel_shader",
             "LPCSTR vertex_shader_name", "LPCSTR pixel_shader_name",
