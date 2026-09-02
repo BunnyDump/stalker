@@ -118,18 +118,18 @@ def harden(root: Path) -> None:
             raise RuntimeError("Vulkan pipeline generation: graphics-pipeline return marker not found")
         text = text.replace(pipeline_return, pipeline_return_new, 1)
 
-    indexed_guard = '''        if (command_buffer == VK_NULL_HANDLE || draw.pipeline == VK_NULL_HANDLE || !draw.index_count ||
-            !g_vkCmdBindPipeline || !g_vkCmdDrawIndexed)
-            return false;
-'''
-    indexed_guard_new = '''        if (command_buffer == VK_NULL_HANDLE || draw.pipeline == VK_NULL_HANDLE || !draw.index_count ||
-            !g_vkCmdBindPipeline || !g_vkCmdDrawIndexed || !xr_vk_pipeline_is_current(draw.pipeline))
-            return false;
-'''
-    if "!xr_vk_pipeline_is_current(draw.pipeline)" not in text:
-        if indexed_guard not in text:
+    indexed_draw_start = text.find("    bool xr_vk_record_indexed_draw(")
+    indexed_draw_end = text.find("    bool xr_vk_make_indexed_draw_packet(", indexed_draw_start)
+    if indexed_draw_start < 0 or indexed_draw_end < 0:
+        raise RuntimeError("Vulkan pipeline generation: indexed-draw function not found")
+    indexed_draw = text[indexed_draw_start:indexed_draw_end]
+    indexed_guard = "!g_vkCmdBindPipeline || !g_vkCmdDrawIndexed)"
+    indexed_guard_new = "!g_vkCmdBindPipeline || !g_vkCmdDrawIndexed || !xr_vk_pipeline_is_current(draw.pipeline))"
+    if "!xr_vk_pipeline_is_current(draw.pipeline)" not in indexed_draw:
+        if indexed_guard not in indexed_draw:
             raise RuntimeError("Vulkan pipeline generation: indexed-draw guard marker not found")
-        text = text.replace(indexed_guard, indexed_guard_new, 1)
+        indexed_draw = indexed_draw.replace(indexed_guard, indexed_guard_new, 1)
+        text = text[:indexed_draw_start] + indexed_draw + text[indexed_draw_end:]
 
     partial_start = text.find("    void xr_vk_destroy_swapchain_resources()\n    {")
     full_start = text.find("    void xr_vk_destroy_frame_resources()\n    {", partial_start)
