@@ -60,7 +60,7 @@ def validate(root: Path) -> None:
         "declaration_count > MAX_FVF_DECL_SIZE",
         "&declaration->dcl_code[0], declaration_count",
         "geometry->vb_stride",
-        "const xr_vk_vertex_input_layout* vertex_layout, VkPrimitiveTopology topology",
+        "VkPrimitiveTopology topology",
         "input_assembly.topology = topology",
     )
     for token in required:
