@@ -66,7 +66,7 @@ def validate(root: Path) -> None:
         "staging_offset % block_bytes",
         "width != mip_width && (width % block_width) != 0",
         "height != mip_height && (height % block_height) != 0",
-        "g_vkCmdCopyBufferToImage",
+        "g_vkCmdCopyBufferToImage(command_buffer",
     )
     positions = [copy_body.find(token) for token in ordered]
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
