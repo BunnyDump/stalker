@@ -92,18 +92,27 @@ def install_uniform_stream(root: Path) -> None:
             raise RuntimeError("Vulkan uniform stream: shader-module helper marker not found")
         text = text.replace(helper_marker, helpers + helper_marker, 1)
 
+    frame_marker = "bool xr_vk_bootstrap_frame()\n"
     fence_marker = '''    if (g_vkWaitForFences(g_device, 1, &g_frame_fence, VK_TRUE, ~0ull) != VK_SUCCESS)
         return false;
-
 '''
-    fence_replacement = fence_marker + '''    // One frame is in flight. Once the fence is signalled, previous uniform ranges are no longer in use.
+    fence_replacement = fence_marker + '''    // The completed frame no longer references its uniform ranges.
     xr_vk_reset_uniform_stream();
-
 '''
-    if "xr_vk_reset_uniform_stream();" not in text[text.find("bool xr_vk_bootstrap_frame()") :]:
-        if fence_marker not in text:
+    frame_offset = text.find(frame_marker)
+    if frame_offset < 0:
+        raise RuntimeError("Vulkan uniform stream: bootstrap-frame marker not found")
+    frame_text = text[frame_offset:]
+    if "xr_vk_reset_uniform_stream();" not in frame_text:
+        fence_offset = frame_text.find(fence_marker)
+        if fence_offset < 0:
             raise RuntimeError("Vulkan uniform stream: frame-fence marker not found")
-        text = text.replace(fence_marker, fence_replacement, 1)
+        absolute_fence_offset = frame_offset + fence_offset
+        text = (
+            text[:absolute_fence_offset]
+            + fence_replacement
+            + text[absolute_fence_offset + len(fence_marker) :]
+        )
 
     reset_marker = "        g_uniform_memory = VK_NULL_HANDLE;\n"
     if "        g_uniform_cursor = 0;\n" not in text[text.find("void xr_vk_destroy_frame_resources"):]:
