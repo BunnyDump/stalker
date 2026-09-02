@@ -319,6 +319,18 @@ def harden(root: Path) -> None:
     if plain_static_new not in text:
         text = replace_once(text, plain_static_old, plain_static_new, "plain static descriptor reuse")
 
+    stale_gate_comment = (
+        "        // Production Vulkan draws must not bypass SHOC's active textures/constants.\n"
+        "        // This gate is deliberately fail-closed until the CBackend resource snapshot is\n"
+        "        // mirrored into Vulkan descriptors/uniforms for the exact current draw.\n"
+    )
+    if stale_gate_comment in text:
+        text = text.replace(
+            stale_gate_comment,
+            "        // Resolve and materialize the exact per-draw SHOC resource snapshot.\n",
+            1,
+        )
+
     source.write_text(text, encoding="utf-8")
     final = source.read_text(encoding="utf-8")
     required = (
