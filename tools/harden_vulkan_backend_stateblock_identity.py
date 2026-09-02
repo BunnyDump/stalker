@@ -16,7 +16,12 @@ def harden(root: Path) -> None:
     h = backend_h.read_text(encoding="utf-8")
     old_indexed = "IDirect3DPixelShader9* pixel_shader, LPCSTR vertex_shader_name, LPCSTR pixel_shader_name,\n    u32 base_vertex"
     new_indexed = "IDirect3DPixelShader9* pixel_shader, LPCSTR vertex_shader_name, LPCSTR pixel_shader_name,\n    IDirect3DStateBlock9* state_block, u32 base_vertex"
-    if "IDirect3DStateBlock9* state_block, u32 base_vertex" not in h:
+    indexed_callback_start = h.find("typedef BOOL(__cdecl* xr_vk_backend_draw_indexed_fn)")
+    indexed_callback_end = h.find(");", indexed_callback_start)
+    if indexed_callback_start < 0 or indexed_callback_end < 0:
+        raise RuntimeError("backend state identity: indexed callback missing")
+    indexed_callback = h[indexed_callback_start:indexed_callback_end]
+    if "IDirect3DStateBlock9* state_block" not in indexed_callback:
         if old_indexed not in h:
             raise RuntimeError("backend state identity: indexed callback marker not found")
         h = h.replace(old_indexed, new_indexed, 1)
