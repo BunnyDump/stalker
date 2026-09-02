@@ -86,8 +86,8 @@ def harden(root: Path) -> None:
     if "const R_constant_array* vertex_constants" not in indexed_block:
         old = (
             "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
-            "    const xr_vk_render_state_snapshot* render_state, u32 base_vertex, u32 start_vertex,\n"
-            "    u32 vertex_count, u32 start_index, u32 primitive_count)"
+            "    const xr_vk_render_state_snapshot* render_state, u32 base_vertex, u32 start_vertex, "
+            "u32 vertex_count, u32 start_index, u32 primitive_count)"
         )
         new = (
             "    LPCSTR vertex_shader_name, LPCSTR pixel_shader_name, IDirect3DStateBlock9* state_block,\n"
