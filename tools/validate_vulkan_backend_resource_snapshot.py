@@ -21,7 +21,8 @@ def validate(root: Path) -> None:
         "const R_constant_array* vertex_constants",
         "const R_constant_array* pixel_constants",
         "CTexture* const* pixel_textures, u32 pixel_texture_count",
-        "CTexture* const* vertex_textures, u32 vertex_texture_count",
+        "CTexture* const* vertex_textures",
+        "u32 vertex_texture_count",
     )
     for token in header_tokens:
         if header.count(token) < 2:
