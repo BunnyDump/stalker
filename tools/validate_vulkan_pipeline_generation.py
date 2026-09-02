@@ -41,7 +41,7 @@ def validate(root: Path) -> None:
     draw_end = text.index("bool xr_vk_make_indexed_draw_packet", draw_start)
     draw = text[draw_start:draw_end]
     generation_guard = draw.index("!xr_vk_pipeline_is_current(draw.pipeline)")
-    bind = draw.index("g_vkCmdBindPipeline")
+    bind = draw.index("g_vkCmdBindPipeline(command_buffer")
     if generation_guard > bind:
         raise RuntimeError("Vulkan pipeline generation validation failed: stale pipeline can be bound")
 
