@@ -37,14 +37,20 @@ def harden(root: Path) -> None:
     rt = backend_runtime.read_text(encoding="utf-8")
     old_call = "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, vk_vs_name, vk_ps_name, baseV, startV, countV, startI, PC)"
     new_call = "g_xr_vk_backend_draw_indexed(T, decl, vb, vb_stride, ib, vs, ps, vk_vs_name, vk_ps_name, state, baseV, startV, countV, startI, PC)"
-    if new_call not in rt:
+    indexed_dispatch_start = rt.find("g_xr_vk_backend_draw_indexed(")
+    indexed_dispatch_end = rt.find(")", indexed_dispatch_start)
+    indexed_dispatch = rt[indexed_dispatch_start:indexed_dispatch_end]
+    if indexed_dispatch_start < 0 or "vk_ps_name, state," not in indexed_dispatch:
         if old_call not in rt:
             raise RuntimeError("backend state identity: indexed dispatch marker not found")
         rt = rt.replace(old_call, new_call, 1)
 
     old_call = "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, vk_vs_name, vk_ps_name, startV, PC)"
     new_call = "g_xr_vk_backend_draw(T, decl, vb, vb_stride, vs, ps, vk_vs_name, vk_ps_name, state, startV, PC)"
-    if new_call not in rt:
+    plain_dispatch_start = rt.find("g_xr_vk_backend_draw(")
+    plain_dispatch_end = rt.find(")", plain_dispatch_start)
+    plain_dispatch = rt[plain_dispatch_start:plain_dispatch_end]
+    if plain_dispatch_start < 0 or "vk_ps_name, state," not in plain_dispatch:
         if old_call not in rt:
             raise RuntimeError("backend state identity: plain dispatch marker not found")
         rt = rt.replace(old_call, new_call, 1)
@@ -115,7 +121,10 @@ def harden(root: Path) -> None:
 
     guard_marker = "if (!vertex_shader_identity || !pixel_shader_identity || !declaration || !vertex_stride)"
     guard_new = "if (!vertex_shader_identity || !pixel_shader_identity || !declaration || !vertex_stride || !state_block)"
-    if guard_new not in vk:
+    key_builder_start = vk.find("bool xr_vk_make_backend_pipeline_key(")
+    key_builder_end = vk.find("VkPrimitiveTopology topology", key_builder_start)
+    key_builder_guard = vk[key_builder_start:key_builder_end]
+    if key_builder_start < 0 or "!state_block" not in key_builder_guard:
         if guard_marker not in vk:
             raise RuntimeError("backend state identity: key builder guard marker not found")
         vk = vk.replace(guard_marker, guard_new, 1)
@@ -130,7 +139,8 @@ def harden(root: Path) -> None:
     # Both export calls use the same key-builder text.
     call_old = "declaration, vertex_stride, primitive, pipeline_key, vertex_layout)"
     call_new = "declaration, vertex_stride, primitive, state_block, pipeline_key, vertex_layout)"
-    if call_new not in vk:
+    state_aware_call = "declaration, vertex_stride, primitive, state_block,"
+    if vk.count(state_aware_call) < 2:
         count = vk.count(call_old)
         if count != 2:
             raise RuntimeError(f"backend state identity: expected 2 key-builder calls, found {count}")
