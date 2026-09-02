@@ -117,9 +117,13 @@ def harden(root: Path) -> None:
     ):
         old = f'''        if (!xr_vk_create_buffer({size_expr}, {usage},\n                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, {buffer_name}, {memory_name}))\n            return false;\n'''
         new = f'''        if ({buffer_name} == VK_NULL_HANDLE &&\n            !xr_vk_create_buffer({size_expr}, {usage},\n                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, {buffer_name}, {memory_name}))\n            return false;\n'''
+        wrapped_old = f'''        if (!xr_vk_create_buffer({size_expr},\n                {usage},\n                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, {buffer_name}, {memory_name}))\n            return false;\n'''
+        wrapped_new = f'''        if ({buffer_name} == VK_NULL_HANDLE &&\n            !xr_vk_create_buffer({size_expr},\n                {usage},\n                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, {buffer_name}, {memory_name}))\n            return false;\n'''
         if old in text:
             text = text.replace(old, new, 1)
-        elif new not in text:
+        elif wrapped_old in text:
+            text = text.replace(wrapped_old, wrapped_new, 1)
+        elif new not in text and wrapped_new not in text:
             raise RuntimeError(f"Vulkan resource lifetime: {buffer_name} creation marker changed")
 
     source.write_text(text, encoding="utf-8")
