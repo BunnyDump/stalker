@@ -94,7 +94,12 @@ extern ENGINE_API xr_vk_backend_draw_fn g_xr_vk_backend_draw;
 
     destroy_marker = '''\tif (hRender)\n\t{\n\t\tFreeLibrary(hRender);\n'''
     destroy_new = '''\tif (hRender)\n\t{\n\t\tg_xr_vk_backend_draw_indexed = NULL;\n\t\tg_xr_vk_backend_draw = NULL;\n\t\tFreeLibrary(hRender);\n'''
-    if "g_xr_vk_backend_draw_indexed = NULL;\n\t\tg_xr_vk_backend_draw = NULL;\n\t\tFreeLibrary" not in api:
+    destroy_start = api.find("void CEngineAPI::Destroy(void)")
+    destroy_block = api[destroy_start:] if destroy_start >= 0 else ""
+    if not (
+        "g_xr_vk_backend_draw_indexed = NULL;" in destroy_block
+        and "g_xr_vk_backend_draw = NULL;" in destroy_block
+    ):
         if destroy_marker not in api:
             raise RuntimeError("backend dispatch: EngineAPI renderer destroy marker not found")
         api = api.replace(destroy_marker, destroy_new, 1)
