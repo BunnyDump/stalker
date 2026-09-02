@@ -30,8 +30,8 @@ def validate(root: Path) -> None:
     if "xr_vk_wait_for_stream_write_safety()" not in upload:
         raise RuntimeError("Vulkan stream lifetime validation failed: upload is not fence guarded")
 
-    frame_start = text.index("bool xr_vk_bootstrap_frame()")
-    frame_end = text.index("bool xr_vk_bootstrap_runtime_ready()", frame_start)
+    frame_start = text.index("bool xr_vk_bootstrap_begin_frame()")
+    frame_end = text.index("bool xr_vk_bootstrap_frame()", frame_start)
     frame = text[frame_start:frame_end]
     wait = frame.index("g_vkWaitForFences")
     clear = frame.index("g_frame_submission_pending = false;", wait)
