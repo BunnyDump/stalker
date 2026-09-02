@@ -42,9 +42,9 @@ def validate(root: Path) -> None:
         raise RuntimeError("Vulkan material descriptor validation failed: indexed draw function range not found")
     record = text[record_start:record_end]
     order = (
-        "g_vkCmdBindPipeline",
-        "xr_vk_bind_material_descriptor",
-        "g_vkCmdDrawIndexed",
+        "g_vkCmdBindPipeline(command_buffer",
+        "xr_vk_bind_material_descriptor(command_buffer",
+        "g_vkCmdDrawIndexed(command_buffer",
     )
     positions = [record.find(token) for token in order]
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
