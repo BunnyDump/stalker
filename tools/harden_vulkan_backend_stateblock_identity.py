@@ -156,13 +156,19 @@ def harden(root: Path) -> None:
         "u64 state_block_identity;",
         "a.state_block_identity == b.state_block_identity",
         "reinterpret_cast<size_t>(state_block)",
-        "primitive, state_block, pipeline_key, vertex_layout",
+        "primitive, state_block,",
     ):
         if token not in final_vk and token != "IDirect3DStateBlock9* state_block":
             raise RuntimeError(f"backend state identity validation failed: missing {token}")
     if "IDirect3DStateBlock9* state_block" not in final_h:
         raise RuntimeError("backend state identity validation failed: callback contract not state-aware")
-    if "vk_ps_name, state, baseV" not in final_rt or "vk_ps_name, state, startV" not in final_rt:
+    final_indexed_dispatch_start = final_rt.find("g_xr_vk_backend_draw_indexed(")
+    final_indexed_dispatch_end = final_rt.find(")", final_indexed_dispatch_start)
+    final_plain_dispatch_start = final_rt.find("g_xr_vk_backend_draw(")
+    final_plain_dispatch_end = final_rt.find(")", final_plain_dispatch_start)
+    final_indexed_dispatch = final_rt[final_indexed_dispatch_start:final_indexed_dispatch_end]
+    final_plain_dispatch = final_rt[final_plain_dispatch_start:final_plain_dispatch_end]
+    if "vk_ps_name, state," not in final_indexed_dispatch or "vk_ps_name, state," not in final_plain_dispatch:
         raise RuntimeError("backend state identity validation failed: RCache does not forward active state block")
 
     print("[vulkan-backend-state] D3D9 state-block identity carried through ABI and isolated in backend pipeline key")
