@@ -28,8 +28,8 @@ def harden(root: Path) -> None:
         h = replace_once(
             h,
             "    IDirect3DPixelShader9* pixel_shader, LPCSTR vertex_shader_name, LPCSTR pixel_shader_name,\n"
-            "    IDirect3DStateBlock9* state_block, const xr_vk_render_state_snapshot* render_state, u32 base_vertex,\n"
-            "    u32 start_vertex, u32 vertex_count, u32 start_index, u32 primitive_count);",
+            "    IDirect3DStateBlock9* state_block, const xr_vk_render_state_snapshot* render_state, u32 base_vertex, "
+            "u32 start_vertex, u32 vertex_count, u32 start_index, u32 primitive_count);",
             "    IDirect3DPixelShader9* pixel_shader, LPCSTR vertex_shader_name, LPCSTR pixel_shader_name,\n"
             "    IDirect3DStateBlock9* state_block, const xr_vk_render_state_snapshot* render_state,\n"
             "    const R_constant_array* vertex_constants, const R_constant_array* pixel_constants,\n"
