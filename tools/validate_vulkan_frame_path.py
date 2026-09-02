@@ -103,7 +103,7 @@ def validate(root: Path) -> None:
         "g_vkQueuePresentKHR",
         "xr_vk_clear_active_frame_state()",
     )
-    end_positions = [end.find(token) for token in end_order]
+    end_positions = [end.find(token) for token in end_order[:-1]] + [end.rfind(end_order[-1])]
     if any(pos < 0 for pos in end_positions) or end_positions != sorted(end_positions):
         raise RuntimeError("Vulkan frame-path validation failed: end-frame submit/present order invalid")
 

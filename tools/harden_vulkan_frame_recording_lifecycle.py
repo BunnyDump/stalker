@@ -44,6 +44,7 @@ def harden(root: Path) -> None:
     state = state_marker + (
         "    bool g_frame_recording = false;\n"
         "    unsigned g_active_frame_image_index = ~0u;\n"
+        "    VkResult g_active_frame_acquire_result = VK_SUCCESS;\n"
     )
     if "g_frame_recording" not in text:
         if state_marker not in text:
@@ -75,6 +76,11 @@ def harden(root: Path) -> None:
     # end_frame owns an acquired image. Every failure must release the CPU-side
     # recording state so the next frame can safely retry/fall back to D3D9.
     end_body = _clear_failure_returns(end_body)
+    end_body = end_body.replace(
+        "presented == VK_SUBOPTIMAL_KHR || acquire == VK_SUBOPTIMAL_KHR",
+        "presented == VK_SUBOPTIMAL_KHR || g_active_frame_acquire_result == VK_SUBOPTIMAL_KHR",
+        1,
+    )
     success = end_body.rfind("return true;")
     if success < 0:
         raise RuntimeError("Vulkan frame lifecycle: successful frame return not found")
@@ -91,6 +97,7 @@ def harden(root: Path) -> None:
 ''' + begin_body.replace("\n    if (!xr_vk_bootstrap_runtime_ready())\n        return false;", "", 1) + r'''
 
     g_active_frame_image_index = image_index;
+    g_active_frame_acquire_result = acquire;
     g_frame_recording = true;
     return true;
 }
@@ -101,6 +108,7 @@ namespace
     {
         g_frame_recording = false;
         g_active_frame_image_index = ~0u;
+        g_active_frame_acquire_result = VK_SUCCESS;
     }
 }
 
@@ -149,7 +157,8 @@ void* xr_vk_bootstrap_active_command_buffer()
             raise RuntimeError("Vulkan frame lifecycle: teardown fence marker not found")
         destroy = destroy.replace(
             reset_marker,
-            reset_marker + "        g_frame_recording = false;\n        g_active_frame_image_index = ~0u;\n",
+            reset_marker + "        g_frame_recording = false;\n        g_active_frame_image_index = ~0u;\n"
+            "        g_active_frame_acquire_result = VK_SUCCESS;\n",
             1,
         )
         text = text[:destroy_start] + destroy + text[destroy_end:]
@@ -216,10 +225,12 @@ void* xr_vk_bootstrap_active_command_buffer()
     required_source = (
         "bool g_frame_recording = false;",
         "unsigned g_active_frame_image_index = ~0u;",
+        "VkResult g_active_frame_acquire_result = VK_SUCCESS;",
         "bool xr_vk_bootstrap_begin_frame()",
         "bool xr_vk_bootstrap_end_frame()",
         "void* xr_vk_bootstrap_active_command_buffer()",
         "g_active_frame_image_index = image_index;",
+        "g_active_frame_acquire_result = acquire;",
         "g_frame_recording = true;",
         "g_vkCmdEndRenderPass(g_command_buffers[image_index])",
         "g_vkQueueSubmit",
