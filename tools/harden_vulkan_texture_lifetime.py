@@ -34,6 +34,18 @@ def harden(root: Path) -> None:
         texture = xr_vk_texture_resource();
     }
 '''
+    owner_aware_old_destroy = r'''    void xr_vk_destroy_texture(xr_vk_texture_resource& texture)
+    {
+        xr_vk_unregister_texture_resource(&texture);
+        if (g_device != VK_NULL_HANDLE && texture.view != VK_NULL_HANDLE && g_vkDestroyImageView)
+            g_vkDestroyImageView(g_device, texture.view, NULL);
+        if (g_device != VK_NULL_HANDLE && texture.image != VK_NULL_HANDLE && g_vkDestroyImage)
+            g_vkDestroyImage(g_device, texture.image, NULL);
+        if (g_device != VK_NULL_HANDLE && texture.memory != VK_NULL_HANDLE && g_vkFreeMemory)
+            g_vkFreeMemory(g_device, texture.memory, NULL);
+        texture = xr_vk_texture_resource();
+    }
+'''
     new_destroy = r'''    xr_vector<xr_vk_texture_resource>& xr_vk_deferred_texture_queue()
     {
         static xr_vector<xr_vk_texture_resource> queue;
@@ -87,14 +99,22 @@ def harden(root: Path) -> None:
         xr_vk_destroy_texture(texture);
     }
 '''
+    owner_aware_new_destroy = new_destroy.replace(
+        "    void xr_vk_destroy_texture(xr_vk_texture_resource& texture)\n    {\n",
+        "    void xr_vk_destroy_texture(xr_vk_texture_resource& texture)\n    {\n"
+        "        xr_vk_unregister_texture_resource(&texture);\n",
+        1,
+    )
     if "xr_vk_deferred_texture_queue" not in text:
-        if old_destroy not in text:
+        if owner_aware_old_destroy in text:
+            text = text.replace(owner_aware_old_destroy, owner_aware_new_destroy, 1)
+        elif old_destroy in text:
+            text = text.replace(old_destroy, new_destroy, 1)
+        else:
             raise RuntimeError("Vulkan texture lifetime: original destroy helper not found")
-        text = text.replace(old_destroy, new_destroy, 1)
 
     wait_marker = '''    if (g_vkWaitForFences(g_device, 1, &g_frame_fence, VK_TRUE, ~0ull) != VK_SUCCESS)
         return false;
-
 '''
     wait_replacement = wait_marker + '''    // The single in-flight frame is complete; deferred texture handles are now GPU-safe to release.
     xr_vk_collect_deferred_textures();
@@ -138,6 +158,7 @@ def harden(root: Path) -> None:
         "xr_vk_release_texture_material",
         "xr_vk_free_material_descriptor(descriptor_set)",
         "xr_vk_deferred_texture_queue().push_back(texture)",
+        "xr_vk_unregister_texture_resource(&texture)",
         "The single in-flight frame is complete",
         "Device idle guarantees every queued texture",
     )
