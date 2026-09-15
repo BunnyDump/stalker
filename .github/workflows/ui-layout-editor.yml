@@ -8,6 +8,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-2022
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2
@@ -33,6 +34,7 @@ jobs:
           Copy-Item 'tools/UILayoutEditor/README_RU.md' $out
           Copy-Item (Join-Path $check 'example') $out -Recurse
           Copy-Item (Join-Path $check 'self-test.txt') $out
+          Copy-Item (Join-Path $check 'ui-check.txt') $out
           Copy-Item $image $out
           Copy-Item (Join-Path $check 'canvas.png') $out
           Get-FileHash (Join-Path $out 'XRay_UI_Editor.exe') | Format-List | Out-File (Join-Path $out 'SHA256.txt')

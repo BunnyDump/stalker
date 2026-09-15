@@ -84,8 +84,9 @@ namespace HalkUIEditor {
         public UiNode Node(string key){UiNode n;return key!=null&&Xml.ByKey.TryGetValue(key,out n)?n:null;}
         public void SetText(string text){var parsed=new LosslessXml(text);Text=text;Xml=parsed;ParseError=null;}
         public void Commit(string before){if(before==Text)return;UndoStack.Push(before);RedoStack.Clear();}
-        public bool Undo(){if(UndoStack.Count==0)return false;RedoStack.Push(Text);SetText(UndoStack.Pop());return true;}
-        public bool Redo(){if(RedoStack.Count==0)return false;UndoStack.Push(Text);SetText(RedoStack.Pop());return true;}
+        public void RestoreText(string text){Text=text;try{Xml=new LosslessXml(text);ParseError=null;}catch(FormatException ex){Xml=new LosslessXml("");ParseError=ex.Message;}}
+        public bool Undo(){if(UndoStack.Count==0)return false;RedoStack.Push(Text);RestoreText(UndoStack.Pop());return true;}
+        public bool Redo(){if(RedoStack.Count==0)return false;UndoStack.Push(Text);RestoreText(RedoStack.Pop());return true;}
         public static string Num(float f){return Math.Round(f,3).ToString("0.###",CultureInfo.InvariantCulture);}
         public void SetAttributes(Dictionary<string,Dictionary<string,string>> changes){
             var patches=new List<TextPatch>();
