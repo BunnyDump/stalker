@@ -12,9 +12,9 @@ jobs:
       - name: Prepare compiler for local corpus validation
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y mono-mcs libmono-system-windows-forms4.0-cil libgdiplus
+          sudo apt-get install -y mono-mcs libmono-system-windows-forms4.0-cil libgdiplus xvfb
           mkdir -p output
-          tar -czf output/editor-test-toolchain.tar.gz /usr/bin/mono-sgen /usr/lib/mono /etc/mono /usr/lib/libmono* /usr/lib/libgdiplus*
+          tar -czf output/editor-test-toolchain.tar.gz /usr/bin/mono-sgen /usr/lib/mono /etc/mono /usr/lib/libmono* /usr/lib/libgdiplus* /usr/lib/x86_64-linux-gnu/libexif* /usr/lib/x86_64-linux-gnu/libXfont2* /usr/bin/Xvfb /usr/bin/xkbcomp /usr/share/X11/xkb
       - uses: actions/upload-artifact@v4
         with:
           name: editor-test-toolchain
