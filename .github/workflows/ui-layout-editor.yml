@@ -1,0 +1,46 @@
+name: Build UI layout editor
+on:
+  push:
+    branches: ['codex/ui-layout-editor-20260915']
+    paths: ['tools/UILayoutEditor/**', '.github/workflows/ui-layout-editor.yml']
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Compile x64 .NET Framework editor
+        shell: pwsh
+        run: msbuild tools/UILayoutEditor/UILayoutEditor.csproj /restore /p:Configuration=Release /p:Platform=x64 /v:minimal
+      - name: Run regression and UI smoke checks
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'tools/UILayoutEditor/bin/Release/XRay_UI_Editor.exe').Path
+          $check = Join-Path $env:RUNNER_TEMP 'editor-checks'
+          New-Item -ItemType Directory -Force $check | Out-Null
+          $p = Start-Process -FilePath $exe -ArgumentList @('--self-test', $check) -Wait -PassThru
+          Get-Content (Join-Path $check 'self-test.txt')
+          if ($p.ExitCode -ne 0) { throw 'Regression checks failed' }
+          $image = Join-Path $check 'editor-preview.png'
+          $sample = Join-Path $check 'example'
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke-output', $image, $sample) -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or !(Test-Path $image)) { throw 'UI smoke failed' }
+          $out = 'distribution'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item 'tools/UILayoutEditor/bin/Release/XRay_UI_Editor.exe*' $out
+          Copy-Item 'tools/UILayoutEditor/README_RU.md' $out
+          Copy-Item (Join-Path $check 'example') $out -Recurse
+          Copy-Item (Join-Path $check 'self-test.txt') $out
+          Copy-Item $image $out
+          Copy-Item (Join-Path $check 'canvas.png') $out
+          Get-FileHash (Join-Path $out 'XRay_UI_Editor.exe') | Format-List | Out-File (Join-Path $out 'SHA256.txt')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: XRay-UI-Editor-Windows-x64
+          path: |
+            distribution/
+            tools/UILayoutEditor/bin/Release/editor-error.txt
+          retention-days: 30
