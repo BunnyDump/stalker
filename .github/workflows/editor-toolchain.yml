@@ -1,0 +1,22 @@
+name: Editor test toolchain
+on:
+  push:
+    branches: ['codex/ui-layout-editor-20260915']
+    paths: ['.github/workflows/editor-toolchain.yml']
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare compiler for local corpus validation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y mono-mcs libmono-system-windows-forms4.0-cil libgdiplus
+          mkdir -p output
+          tar -czf output/editor-test-toolchain.tar.gz /usr/bin/mono-sgen /usr/lib/mono /etc/mono /usr/lib/libmono* /usr/lib/libgdiplus*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-test-toolchain
+          path: output/editor-test-toolchain.tar.gz
+          retention-days: 2
