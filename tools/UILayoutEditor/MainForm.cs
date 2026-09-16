@@ -168,7 +168,18 @@ namespace HalkUIEditor {
         void OnDragDrop(object sender,DragEventArgs e){string[] items=e.Data.GetData(DataFormats.FileDrop) as string[];if(items==null||items.Length==0)return;Guard(delegate{string p=items[0];if(Directory.Exists(p))OpenWorkspace(p,null);else if(Path.GetExtension(p).Equals(".xml",StringComparison.OrdinalIgnoreCase))OpenWorkspace(Workspace.FindRoot(p),p);else status.Text="Перетащите распакованную папку проекта или XML.";});}
         void OnClosing(object sender,FormClosingEventArgs e){if(closingSmoke)return;if(!CanLeaveWorkspace()){e.Cancel=true;return;}SaveSettings();if(Workspace!=null)Workspace.Dispose();}
         public void SmokeOutput(string path){closingSmoke=true;string directory=Path.GetDirectoryName(Path.GetFullPath(path));Directory.CreateDirectory(directory);string checks=SelfTest.ExerciseUI(this);File.WriteAllText(Path.Combine(directory,"ui-check.txt"),checks);Canvas.Fit();if(Document!=null)foreach(var n in Document.Xml.Nodes)if(n.Name.StartsWith("dragdrop_")){Canvas.SelectKey(n.Key,false);break;}SetTheme("classic",false);CapturePreview(path);foreach(string id in ThemeCatalog.Ids){SetTheme(id,false);CapturePreview(Path.Combine(directory,"theme-"+id+".png"));}SetTheme("soc",false);inspectorTabs.SelectedIndex=1;CapturePreview(Path.Combine(directory,"texture-preview.png"));SetTheme("light",false);source.Select(0,0);ShowFind();findText.Text="dragdrop";FindSource(false);CapturePreview(Path.Combine(directory,"source-preview.png"));centerTabs.SelectedIndex=0;SetTheme("classic",false);Canvas.Export(Path.Combine(directory,"canvas.png"));Close();}
-        void CapturePreview(string path){Refresh();Application.DoEvents();using(var b=new Bitmap(Width,Height)){DrawToBitmap(b,new Rectangle(0,0,Width,Height));b.Save(path,System.Drawing.Imaging.ImageFormat.Png);}}
+        void CapturePreview(string path){
+            Activate();BringToFront();Refresh();Application.DoEvents();
+            using(var b=new Bitmap(Width,Height)){
+                DrawToBitmap(b,new Rectangle(0,0,Width,Height));
+                // RichEdit omits its text in WM_PRINT/DrawToBitmap. Capture the visible desktop window.
+                using(var g=Graphics.FromImage(b)){
+                    var visible=Rectangle.Intersect(Bounds,SystemInformation.VirtualScreen);
+                    if(!visible.IsEmpty)g.CopyFromScreen(visible.Location,new Point(visible.X-Left,visible.Y-Top),visible.Size,CopyPixelOperation.SourceCopy);
+                }
+                b.Save(path,System.Drawing.Imaging.ImageFormat.Png);
+            }
+        }
         void LoadSettings(){try{if(!File.Exists(settingsPath))return;var x=new XmlDocument();x.XmlResolver=null;x.Load(settingsPath);ReadView(x.DocumentElement);}catch(Exception){}}
         void SaveSettings(){try{Directory.CreateDirectory(Path.GetDirectoryName(settingsPath));var x=new XmlDocument();var root=x.CreateElement("view");x.AppendChild(root);WriteView(root);x.Save(settingsPath);}catch(Exception){}}
         void WriteView(XmlElement e){SaveThemeSettings(e);e.SetAttribute("grid_x",Canvas.Options.GridX.ToString());e.SetAttribute("grid_y",Canvas.Options.GridY.ToString());e.SetAttribute("major",Canvas.Options.Major.ToString());e.SetAttribute("grid_color",Canvas.Options.GridColor.ToArgb().ToString());e.SetAttribute("background_color",Canvas.Options.BackgroundColor.ToArgb().ToString());foreach(var v in toggles)e.SetAttribute(v.Key,v.Value.Checked?"1":"0");}
