@@ -37,7 +37,10 @@ namespace HalkUIEditor {
         public ThemePalette Palette=ThemeCatalog.Create("classic");
         public ThemeTabs(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);SizeMode=TabSizeMode.Fixed;ItemSize=new Size(82,30);Padding=new Point(10,5);}
         protected override void OnPaint(PaintEventArgs e){var p=Palette;var g=e.Graphics;g.Clear(p.Panel);using(var border=new Pen(p.Border))g.DrawLine(border,0,31,Width,31);for(int i=0;i<TabPages.Count;i++){var r=GetTabRect(i);bool selected=i==SelectedIndex;using(var br=new SolidBrush(selected?p.Input:p.Panel))g.FillRectangle(br,r);if(selected)using(var br=new SolidBrush(p.Accent))g.FillRectangle(br,r.X+8,r.Bottom-3,r.Width-16,2);TextRenderer.DrawText(g,TabPages[i].Text,Font,r,selected?p.Text:p.Muted,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);}}
-        protected override void OnSelectedIndexChanged(EventArgs e){base.OnSelectedIndexChanged(e);Invalidate();}
+        void FitHeaders(){if(TabPages.Count==0)return;int width=Math.Min(110,Math.Max(36,(ClientSize.Width-10)/TabPages.Count));if(ItemSize.Width!=width)ItemSize=new Size(width,30);}
+        protected override void OnSizeChanged(EventArgs e){base.OnSizeChanged(e);FitHeaders();Invalidate();}
+        protected override void OnControlAdded(ControlEventArgs e){base.OnControlAdded(e);FitHeaders();}
+        protected override void OnSelectedIndexChanged(EventArgs e){base.OnSelectedIndexChanged(e);FitHeaders();Invalidate();}
     }
     sealed class ThemeRenderer : ToolStripProfessionalRenderer {
         readonly ThemePalette palette;

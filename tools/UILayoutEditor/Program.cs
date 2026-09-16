@@ -5,6 +5,8 @@ using System.Reflection;
 [assembly: AssemblyTitle("X-Ray UI Editor")]
 [assembly: AssemblyDescription("Offline XML and DDS layout editor")]
 [assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyProduct("X-Ray UI Editor")]
 namespace HalkUIEditor {
     static class Program {
         [STAThread] static int Main(string[] args){

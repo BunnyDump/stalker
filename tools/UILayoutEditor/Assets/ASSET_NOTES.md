@@ -1,0 +1,7 @@
+# Иконка X-Ray UI Editor
+
+Создана встроенным инструментом imagegen для этой программы. Исходный рисунок адаптирован в многоразмерный ICO (16, 20, 24, 32, 40, 48, 64, 96, 128 и 256 пикселей) и PNG для заголовка. Изменение размеров и упаковка не меняют композицию.
+
+Промпт:
+
+Use case: logo-brand. Asset type: a finished Windows desktop application icon for an X-Ray / S.T.A.L.K.E.R. UI layout editor. Primary request: one iconic, professional, highly readable emblem in the industrial post-apocalyptic visual language of the original S.T.A.L.K.E.R. game trilogy and modding tools. Square 1024 by 1024 composition, with actual transparent alpha outside the emblem. A centered beveled, chamfered square steel badge, almost filling the square with a small clear margin. Dark worn gunmetal housing, subtle distressed olive and aged brass materials. A large unmistakable three-bladed radiation trefoil in warm hazard amber is the main focal point. Integrate a simple precise editor crop-frame around it: four thick luminous pale ivory corner brackets with tiny square handles, clearly subordinate to the trefoil. Serious utilitarian PDA / field-instrument aesthetic, crisp broad silhouettes, high contrast, restrained weathering that remains clean at 16, 32 and 48 pixel icon sizes. Frontal symmetrical view, no perspective, no surrounding scenery. No writing, letters, numbers, slogan, watermark or extra badges. No glow outside the edge, no white background, no faux transparency checkerboard. Deliver only the single transparent app icon, not a presentation sheet.

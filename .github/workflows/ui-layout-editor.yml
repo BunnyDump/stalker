@@ -39,6 +39,7 @@ jobs:
           Copy-Item (Join-Path $check 'theme-*.png') $out
           Copy-Item (Join-Path $check 'texture-preview.png') $out
           Copy-Item 'tools/UILayoutEditor/Assets/app.ico' $out
+          Copy-Item 'tools/UILayoutEditor/Assets/ASSET_NOTES.md' $out
           Copy-Item (Join-Path $check 'canvas.png') $out
           Get-FileHash (Join-Path $out 'XRay_UI_Editor.exe') | Format-List | Out-File (Join-Path $out 'SHA256.txt')
       - uses: actions/upload-artifact@v4

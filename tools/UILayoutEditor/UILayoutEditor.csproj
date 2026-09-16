@@ -26,6 +26,7 @@
   <ItemGroup>
     <Compile Include="Core.cs"/><Compile Include="TextureLoader.cs"/><Compile Include="EditorCanvas.cs"/>
     <Compile Include="MainForm.cs"/><Compile Include="Themes.cs"/><Compile Include="WorkspaceUI.cs"/><Compile Include="Program.cs"/><Compile Include="SelfTest.cs"/>
+    <EmbeddedResource Include="Assets\badge.png"><LogicalName>HalkUIEditor.badge.png</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="Assets\app.ico"><LogicalName>HalkUIEditor.app.ico</LogicalName></EmbeddedResource>
     <None Include="App.config"/><None Include="app.manifest"/>
   </ItemGroup>
