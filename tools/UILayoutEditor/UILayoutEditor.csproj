@@ -14,6 +14,7 @@
     <IntermediateOutputPath>obj\$(Configuration)\</IntermediateOutputPath>
     <Optimize>true</Optimize>
     <DebugType>pdbonly</DebugType>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
   </PropertyGroup>
@@ -24,7 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Core.cs"/><Compile Include="TextureLoader.cs"/><Compile Include="EditorCanvas.cs"/>
-    <Compile Include="MainForm.cs"/><Compile Include="Program.cs"/><Compile Include="SelfTest.cs"/>
+    <Compile Include="MainForm.cs"/><Compile Include="Themes.cs"/><Compile Include="WorkspaceUI.cs"/><Compile Include="Program.cs"/><Compile Include="SelfTest.cs"/>
+    <EmbeddedResource Include="Assets\app.ico"><LogicalName>HalkUIEditor.app.ico</LogicalName></EmbeddedResource>
     <None Include="App.config"/><None Include="app.manifest"/>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
