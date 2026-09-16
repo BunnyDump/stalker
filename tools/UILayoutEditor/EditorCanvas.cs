@@ -30,7 +30,7 @@ namespace HalkUIEditor {
         public UiNode Primary {get{return Document==null||Selection.Count==0?null:Document.Node(Selection[0]);}}
         public RectangleF Frame(){if(Document!=null&&Document.Atlas){try{var path=Workspace.ResolveFile(AtlasFile);var b=Workspace.Image(path);if(b!=null)return new RectangleF(0,0,b.Width,b.Height);}catch(Exception){}}return new RectangleF(0,0,1024,768);}
         public void Fit(){RectangleF r=Frame();FitRect(r);}
-        public void FitSelection(){var n=Primary;if(n!=null)FitRect(UiLayout.Rect(Document,n));else Fit();}
+        public void FitSelection(){RectangleF bounds=RectangleF.Empty;bool any=false;if(Document!=null)foreach(string key in Selection){var n=Document.Node(key);if(n==null||!n.Geometry)continue;var r=UiLayout.Rect(Document,n);bounds=any?RectangleF.Union(bounds,r):r;any=true;}if(any)FitRect(bounds);else Fit();}
         void FitRect(RectangleF r){if(ClientSize.Width<50||ClientSize.Height<50||r.Width<=0||r.Height<=0)return;Zoom=Math.Max(.04f,Math.Min(8,Math.Min((ClientSize.Width-60)/(r.Width*Aspect),(ClientSize.Height-60)/r.Height)));Pan=new PointF((ClientSize.Width-r.Width*Zoom*Aspect)/2-r.X*Zoom*Aspect,(ClientSize.Height-r.Height*Zoom)/2-r.Y*Zoom);Invalidate();Report("Масштаб: "+Math.Round(Zoom*100)+"%");}
         public void SetZoom(float zoom){ZoomAt(zoom,new Point(ClientSize.Width/2,ClientSize.Height/2));}
         void ZoomAt(float zoom,Point p){PointF w=ToWorld(p);Zoom=Math.Max(.04f,Math.Min(16,zoom));Pan=new PointF(p.X-w.X*Zoom*Aspect,p.Y-w.Y*Zoom);Invalidate();Report("Масштаб: "+Math.Round(Zoom*100)+"%");}
@@ -99,9 +99,18 @@ namespace HalkUIEditor {
         protected override void OnMouseCaptureChanged(EventArgs e){base.OnMouseCaptureChanged(e);if(!Capture&&(dragging||marquee))CancelDrag();if(!Capture&&panning){panning=false;Cursor=Cursors.Default;}}
         static float Snap(float n,int step){return (float)Math.Round(n/Math.Max(1,step))*Math.Max(1,step);}
         public void MoveSelected(float dx,float dy){if(Document==null||!CanEdit())return;string old=Document.Text;var changes=new Dictionary<string,Dictionary<string,string>>();foreach(string key in Selection){var n=Document.Node(key);if(n==null||!n.Geometry||Document.Locked.Contains(key)||SelectedAncestor(n))continue;changes[key]=new Dictionary<string,string>{{"x",UiDocument.Num(n.Number("x",0)+dx)},{"y",UiDocument.Num(n.Number("y",0)+dy)}};}Document.SetAttributes(changes);Document.Commit(old);if(EditCommitted!=null)EditCommitted(this,EventArgs.Empty);Invalidate();}
-        public void Align(string mode){if(Document==null||Selection.Count<2||!CanEdit())return;string beforeText=Document.Text;var changes=new Dictionary<string,Dictionary<string,string>>();RectangleF anchor=UiLayout.Rect(Document,Primary);
-            foreach(string key in Selection){var n=Document.Node(key);if(n==null||!n.Geometry||Document.Locked.Contains(key)||SelectedAncestor(n))continue;var r=UiLayout.Rect(Document,n);float dx=mode=="left"?anchor.Left-r.Left:mode=="centerx"?anchor.Left+anchor.Width/2-r.Left-r.Width/2:0;float dy=mode=="top"?anchor.Top-r.Top:mode=="centery"?anchor.Top+anchor.Height/2-r.Top-r.Height/2:0;changes[key]=new Dictionary<string,string>{{"x",UiDocument.Num(n.Number("x",0)+dx)},{"y",UiDocument.Num(n.Number("y",0)+dy)}};}
-            Document.SetAttributes(changes);Document.Commit(beforeText);if(EditCommitted!=null)EditCommitted(this,EventArgs.Empty);Invalidate();}
+        public void Align(string mode){
+            if(Document==null||!CanEdit())return;
+            var changes=Arrangement.Build(Document,Selection,mode);
+            if(changes.Count==0){Report("Выберите минимум "+(mode.StartsWith("distribute")?"3":"2")+" независимых разблокированных элемента.");return;}
+            string beforeText=Document.Text;Document.SetAttributes(changes);Document.Commit(beforeText);
+            if(EditCommitted!=null)EditCommitted(this,EventArgs.Empty);Invalidate();
+        }
+        public List<UiNode> HitsAt(Point screen){
+            var found=new List<UiNode>();if(Document==null)return found;PointF world=ToWorld(screen);
+            foreach(var n in VisibleNodes())if(UiLayout.Rect(Document,n).Contains(world))found.Add(n);
+            found.Sort(delegate(UiNode a,UiNode b){var ra=UiLayout.Rect(Document,a);var rb=UiLayout.Rect(Document,b);int c=(ra.Width*ra.Height).CompareTo(rb.Width*rb.Height);return c==0?b.Start.CompareTo(a.Start):c;});return found;
+        }
         public void Export(string path){RectangleF f=Frame();int width=(int)Math.Ceiling(f.Width*Aspect),height=(int)Math.Ceiling(f.Height);if(width>8192||height>8192)throw new InvalidOperationException("Слишком большой экспорт.");float z=Zoom;PointF pan=Pan;try{Zoom=1;Pan=PointF.Empty;using(var b=new Bitmap(width,height))using(var g=Graphics.FromImage(b)){Draw(g,new Rectangle(0,0,width,height),false);b.Save(path,ImageFormat.Png);}}finally{Zoom=z;Pan=pan;}}
         protected override bool IsInputKey(Keys keyData){if((keyData&Keys.KeyCode)==Keys.Left||(keyData&Keys.KeyCode)==Keys.Right||(keyData&Keys.KeyCode)==Keys.Up||(keyData&Keys.KeyCode)==Keys.Down)return true;return base.IsInputKey(keyData);}
         protected override void OnKeyDown(KeyEventArgs e){base.OnKeyDown(e);if(e.KeyCode==Keys.Space){space=true;e.Handled=true;}if(e.KeyCode==Keys.Escape){CancelDrag();e.Handled=true;}float step=e.Shift?10:1;if(e.KeyCode==Keys.Left){MoveSelected(-step,0);e.Handled=true;}if(e.KeyCode==Keys.Right){MoveSelected(step,0);e.Handled=true;}if(e.KeyCode==Keys.Up){MoveSelected(0,-step);e.Handled=true;}if(e.KeyCode==Keys.Down){MoveSelected(0,step);e.Handled=true;}if(e.KeyCode==Keys.F){FitSelection();e.Handled=true;}}

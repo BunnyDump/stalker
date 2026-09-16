@@ -4,8 +4,8 @@ using System.Windows.Forms;
 using System.Reflection;
 [assembly: AssemblyTitle("X-Ray UI Editor")]
 [assembly: AssemblyDescription("Offline XML and DDS layout editor")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 [assembly: AssemblyProduct("X-Ray UI Editor")]
 namespace HalkUIEditor {
     static class Program {

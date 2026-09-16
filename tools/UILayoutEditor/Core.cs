@@ -28,7 +28,16 @@ namespace HalkUIEditor {
         static readonly Regex Attrs = new Regex(@"(?<n>[A-Za-z_][\w:.-]*)\s*=\s*(?:""(?<d>[^""]*)""|'(?<s>[^']*)'|(?<b>[^\s/>]+))",RegexOptions.Compiled);
         public UiNode Root; public List<string> Diagnostics=new List<string>(); public List<UiNode> Nodes = new List<UiNode>();
         public Dictionary<string,UiNode> ByKey = new Dictionary<string,UiNode>();
-        public static string Decode(string s) { s=Regex.Replace(s,@"&#(?:(?:x(?<hex>[0-9A-Fa-f]+))|(?<dec>[0-9]+));",delegate(Match m){try{int code=Convert.ToInt32(m.Groups["hex"].Success?m.Groups["hex"].Value:m.Groups["dec"].Value,m.Groups["hex"].Success?16:10);return code>=32&&code<=0x10ffff&&!(code>=0xd800&&code<=0xdfff)||code==9||code==10||code==13?char.ConvertFromUtf32(code):m.Value;}catch(Exception){return m.Value;}});return s.Replace("&lt;","<").Replace("&gt;",">").Replace("&quot;","\"").Replace("&apos;","'").Replace("&amp;","&"); }
+        public static string Decode(string s) {
+            // One pass is essential: &#38;lt; means the literal text &lt;.
+            return Regex.Replace(s, @"&(?<entity>lt|gt|quot|apos|amp|\#x[0-9A-Fa-f]+|\#[0-9]+);", delegate(Match m) {
+                string value=m.Groups["entity"].Value;
+                switch(value){case "lt":return "<";case "gt":return ">";case "quot":return "\"";case "apos":return "'";case "amp":return "&";}
+                try {int code=Convert.ToInt32(value.Substring(value.StartsWith("#x")?2:1),value.StartsWith("#x")?16:10);
+                    return code>=32&&code<=0x10ffff&&!(code>=0xd800&&code<=0xdfff)||code==9||code==10||code==13?char.ConvertFromUtf32(code):m.Value;
+                }catch(FormatException){return m.Value;}catch(OverflowException){return m.Value;}
+            });
+        }
         public static string Encode(string s) { return s.Replace("&","&amp;").Replace("<","&lt;").Replace(">","&gt;").Replace("\"","&quot;").Replace("'","&apos;"); }
         public LosslessXml(string source) {
             var stack = new Stack<UiNode>(); var roots=new List<UiNode>(); int last=0;
@@ -93,7 +102,7 @@ namespace HalkUIEditor {
             var patches=new List<TextPatch>();
             foreach(var entry in changes){var node=Node(entry.Key);if(node==null)continue;if(node.Name=="#fragment")throw new InvalidOperationException("Выберите XML-тег, а не корень фрагмента.");string added="";
                 foreach(var v in entry.Value){XmlAttributeSpan found=null;foreach(var a in node.Attributes)if(a.Name==v.Key){found=a;break;}
-                    if(found!=null){string value=LosslessXml.Encode(v.Value);if(found.Quote=='\0'&&Regex.IsMatch(value,@"[\s/>]"))value="\""+value+"\"";patches.Add(new TextPatch{Start=found.ValueStart,Length=found.ValueLength,Value=value});}
+                    if(found!=null){string value=LosslessXml.Encode(v.Value);if(found.Quote=='\0'&&(value.Length==0||Regex.IsMatch(value,@"[\s/>]")))value="\""+value+"\"";patches.Add(new TextPatch{Start=found.ValueStart,Length=found.ValueLength,Value=value});}
                     else{if(!Regex.IsMatch(v.Key,@"^[A-Za-z_][\w:.-]*$"))throw new FormatException("Некорректное имя атрибута.");added+=" "+v.Key+"=\""+LosslessXml.Encode(v.Value)+"\"";}
                 }
                 if(added.Length>0)patches.Add(new TextPatch{Start=node.OpenEnd-(node.SelfClosing?2:1),Length=0,Value=added});
@@ -142,9 +151,9 @@ namespace HalkUIEditor {
         void BuildIndex(){Textures.Clear();IndexWarnings.Clear();string variant=ActiveVariant;foreach(var r in regions){string v=Variant(r.OwnerFile);if(v!=variant&&v!="")continue;TextureRegion previous;if(Textures.TryGetValue(r.Id,out previous)){if(Variant(previous.OwnerFile)==variant){if(IndexWarnings.Count<50)IndexWarnings.Add("Повтор texture id «"+r.Id+"»: используется "+Path.GetFileName(previous.OwnerFile)+"; также есть в "+Path.GetFileName(r.OwnerFile)+".");continue;}}r.FilePath=ResolveFile(r.FileReference,r.OwnerFile);Textures[r.Id]=r;}}
         static string Native(string path){return path.Replace('\\',Path.DirectorySeparatorChar).Replace('/',Path.DirectorySeparatorChar);}
         public string ResolveFile(string reference){return ResolveFile(reference,ActiveFile);}
-        public string ResolveFile(string reference,string owner){if(string.IsNullOrEmpty(reference))return null;string key=(TextureDirectory??"")+"|"+Variant(owner)+"|"+reference;string path;if(resolvedPaths.TryGetValue(key,out path))return path;path=FindTextureFile(reference,owner);resolvedPaths[key]=path;return path;}
+        public string ResolveFile(string reference,string owner){if(string.IsNullOrEmpty(reference))return null;string key=(TextureDirectory??"")+"|"+(owner??"")+"|"+reference;string path;if(resolvedPaths.TryGetValue(key,out path))return path;path=FindTextureFile(reference,owner);resolvedPaths[key]=path;return path;}
         string FindTextureFile(string reference,string owner){string s=Native(reference);if(Path.IsPathRooted(s)&&File.Exists(s))return s;string variant=Variant(owner);var roots=new List<string>();
-            if(!string.IsNullOrEmpty(TextureDirectory))roots.Add(TextureDirectory);roots.Add(Path.Combine(Root,"textures"));roots.Add(Root);
+            if(!string.IsNullOrEmpty(TextureDirectory))roots.Add(TextureDirectory);roots.Add(Path.Combine(Root,"textures"));if(!string.IsNullOrEmpty(owner))roots.Add(Path.GetDirectoryName(owner));roots.Add(Root);
             foreach(string root in roots){string mapped=s;if(variant!=""&&(s.StartsWith("ui"+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)))mapped=variant+s.Substring(2);
                 foreach(string relative in new[]{mapped,s,Path.GetFileName(s)})foreach(string suffix in new[]{"",".dds",".png",".bmp"}){string p=Path.Combine(root,relative+suffix);if(File.Exists(p))return p;}}
             string basename=Path.GetFileNameWithoutExtension(s);string match=null;int count=0;foreach(string p in ImageFiles){if(!string.Equals(Path.GetFileNameWithoutExtension(p),basename,StringComparison.OrdinalIgnoreCase))continue;string v=Variant(p);if(variant!=""&&v!=""&&v!=variant)continue;if(v==variant&&v!="")return p;match=p;count++;}return count==1?match:null;
@@ -171,6 +180,11 @@ namespace HalkUIEditor {
                     if(n.Has("cell_width")&&n.Has("cols_num")&&n.Number("cell_width",0)*n.Number("cols_num",1)>n.Number("width",0)+.1f)warnings.Add(n.Name+": ячейки шире контейнера.");
                     if(n.Has("cell_height")&&n.Has("rows_num")&&n.Number("cell_height",0)*n.Number("rows_num",1)>n.Number("height",0)+.1f)warnings.Add(n.Name+": ячейки выше контейнера.");}
                 string tex=TextureName(d,n);if(tex!=""&&w.ResolveFile(tex)==null&&!w.Textures.ContainsKey(tex)&&!w.Textures.ContainsKey(tex+"_e")&&missing.Add(tex))warnings.Add(n.Name+": не найдена текстура "+tex);}
-            if(d.Atlas){foreach(var n in d.Xml.Root.Children)if(n.Name=="texture"){var tr=w.Resolve(n.Get("id",""));if(tr!=null&&tr.FilePath!=null){var b=w.Image(tr.FilePath);RectangleF r=n.LocalRect;if(r.X<0||r.Y<0||r.Right>b.Width||r.Bottom>b.Height)warnings.Add(n.Get("id",n.Name)+": вырезка за пределами DDS.");}}}return warnings;}
+            if(d.Atlas){foreach(var n in d.Xml.Nodes)if(n.Name=="texture"&&n.Has("id")){
+                string reference=d.AtlasReference(n),path=w.ResolveFile(reference,d.FilePath);
+                if(path==null)continue;
+                try{var b=w.Image(path);RectangleF r=n.LocalRect;if(r.X<0||r.Y<0||r.Right>b.Width||r.Bottom>b.Height)warnings.Add(n.Get("id",n.Name)+": вырезка за пределами DDS ("+b.Width+" × "+b.Height+").");}
+                catch(Exception ex){if(missing.Add(path))warnings.Add(Path.GetFileName(path)+": "+ex.Message);}
+            }}return warnings;}
     }
 }
