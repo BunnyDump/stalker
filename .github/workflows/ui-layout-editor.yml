@@ -39,6 +39,7 @@ jobs:
           Copy-Item (Join-Path $check 'theme-*.png') $out
           Copy-Item (Join-Path $check 'texture-preview.png') $out
           Copy-Item (Join-Path $check 'source-preview.png') $out
+          Copy-Item (Join-Path $check 'source-dark-preview.png') $out
           Copy-Item 'tools/UILayoutEditor/Assets/app.ico' $out
           Copy-Item 'tools/UILayoutEditor/Assets/ASSET_NOTES.md' $out
           Copy-Item (Join-Path $check 'canvas.png') $out

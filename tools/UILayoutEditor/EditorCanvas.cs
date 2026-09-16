@@ -22,6 +22,7 @@ namespace HalkUIEditor {
         int resizeHandle=-1;Dictionary<string,RectangleF> initial=new Dictionary<string,RectangleF>();
         ToolTip tooltip=new ToolTip();string hover="";
         public EditorCanvas(){SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.Selectable,true);TabStop=true;BackColor=Color.FromArgb(20,23,27);Dock=DockStyle.Fill;AllowDrop=true;}
+        public void HideTooltip(){tooltip.Hide(this);tooltip.Active=false;}
         public void Bind(Workspace w,UiDocument d){Workspace=w;Document=d;AtlasFile=d==null?"":d.DefaultAtlasReference;Selection.Clear();Options.Aspect=d!=null&&!d.Atlas&&System.IO.Path.GetFileNameWithoutExtension(d.FilePath).EndsWith("_16",StringComparison.OrdinalIgnoreCase)?4f/3f:1;Fit();ChangedSelection();}
         public float Aspect {get{return Document!=null&&Document.Atlas?1:Options.Aspect;}}
         public PointF ToWorld(Point p){return new PointF((p.X-Pan.X)/(Zoom*Aspect),(p.Y-Pan.Y)/Zoom);}

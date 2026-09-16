@@ -66,6 +66,9 @@ namespace HalkUIEditor {
         }
 
         public static void UI(MainForm form) {
+            Rectangle work = Screen.FromControl(form).WorkingArea;
+            if (work.Width >= form.MinimumSize.Width && work.Height >= form.MinimumSize.Height)
+                Check(work.Contains(form.Bounds), "window fits working area without taskbar overlap");
             var d = form.Document; var c = form.Canvas; string original = d.Text;
             string first = d.Xml.Root.Child("dragdrop_pistol").Key, second = d.Xml.Root.Child("dragdrop_automatic").Key, third = d.Xml.Root.Child("dragdrop_belt").Key;
             c.SelectKey(first, false); c.SelectKey(second, true); c.SelectKey(third, true);

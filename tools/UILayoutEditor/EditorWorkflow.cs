@@ -51,6 +51,12 @@ namespace HalkUIEditor {
         SourceGutter sourceGutter;
         bool sourceHistoryActive;
 
+        void FitWindowToDisplay() {
+            Rectangle work = Screen.FromControl(this).WorkingArea;
+            Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
+            Location = new Point(Math.Max(work.Left, Math.Min(Left, work.Right - Width)), Math.Max(work.Top, Math.Min(Top, work.Bottom - Height)));
+        }
+
         void InitializeWorkflow() {
             var viewMenu = (ToolStripMenuItem)MainMenuStrip.Items[2];
             AddMenu(viewMenu, "Назад к предыдущему XML", Keys.Alt | Keys.Left, delegate { NavigateHistory(true); });
